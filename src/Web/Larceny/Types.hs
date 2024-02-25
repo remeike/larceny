@@ -66,10 +66,10 @@ instance Hashable Blank where
 -- Text` in case you need templates to depend on IO actions (like
 -- looking something up in a database) or store state (perhaps keeping
 -- track of what's already been rendered).
-newtype Fill s = Fill { unFill :: Attributes
-                               -> (Path, Template s)
-                               -> Library s
-                               -> StateT s IO Text }
+newtype Fill s m = Fill { unFill :: Attributes
+                               -> (Path, Template s m)
+                               -> Library s m
+                               -> StateT s m Text }
 
 -- | The Blank's attributes, a map from the attribute name to
 -- it's value.
@@ -79,7 +79,7 @@ data Name = Name { nNamespace :: Maybe Text
                  , nName      :: Text } deriving (Eq, Ord, Show)
 
 -- | A map from a Blank to how to fill in that Blank.
-type Substitutions s = Map Blank (Fill s)
+type Substitutions s m = Map Blank (Fill s m)
 
 -- | Turn tuples of text and fills to Substitutions.
 --
@@ -87,7 +87,7 @@ type Substitutions s = Map Blank (Fill s)
 -- subs [("blank", textFill "the fill")
 --      ,("another-blank", textFill "another fill")]
 -- @
-subs :: [(Text, Fill s)] -> Substitutions s
+subs :: [(Text, Fill s m )] -> Substitutions s m
 subs = M.fromList . map (\(x, y) -> (Blank x, y))
 
 -- | Say how to fill in Blanks with missing Fills.
@@ -106,7 +106,7 @@ subs = M.fromList . map (\(x, y) -> (Blank x, y))
 -- subs [("blank", textFill "a fill")] <> fallbackSub (textFill "a fallback")
 -- @
 -- > a fill, a fallback
-fallbackSub :: Fill s -> Substitutions s
+fallbackSub :: Fill s m -> Substitutions s m
 fallbackSub fill = M.fromList [(FallbackBlank, fill)]
 
 -- | When you run a Template with the path, some substitutions, and the
@@ -115,16 +115,16 @@ fallbackSub fill = M.fromList [(FallbackBlank, fill)]
 -- Use `loadTemplates` to load the templates from some directory
 -- into a template library. Use the `render` functions to render
 -- templates from a Library by path.
-newtype Template s = Template { runTemplate :: Path
-                                            -> Substitutions s
-                                            -> Library s
-                                            -> StateT s IO Text }
+newtype Template s m = Template { runTemplate :: Path
+                                              -> Substitutions s m
+                                              -> Library s m
+                                              -> StateT s m Text }
 
 -- | The path to a template.
 type Path = [Text]
 
 -- | A collection of templates.
-type Library s = Map Path (Template s)
+type Library s m = Map Path (Template s m)
 
 -- | If no substitutions are given, Larceny only understands valid
 -- HTML 5 tags. It won't attempt to "fill in" tags that are already

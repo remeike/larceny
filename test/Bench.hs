@@ -52,7 +52,7 @@ runBench = do
       -- still need compiled Heist
     ]
 
-renderTpl :: Library () -> [Entry] -> [Person] -> IO (Maybe Text)
+renderTpl :: Library () IO -> [Entry] -> [Person] -> IO (Maybe Text)
 renderTpl lib es ps = renderWith lib (subs [("entries", mapSubs (entrySubs ps) es)]) () ["list"]
 
 runTpl :: Text -> IO Text
@@ -77,7 +77,7 @@ data Entry = Entry { entryId        :: Int
                    , whopaysIds     :: [Int]
                    } deriving (Eq, Show, Read)
 
-entrySubs :: [Person] -> Entry -> Substitutions ()
+entrySubs :: [Person] -> Entry -> Substitutions () IO
 entrySubs ps (Entry i a w desc dt hm wps) =
   subs [("id", textFill (tshow i))
        ,("account-id", textFill (tshow a))

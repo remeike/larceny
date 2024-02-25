@@ -103,7 +103,7 @@ import           Web.Larceny.Types
 -- @
 -- render appTemplates appState ["path", "to", "template"]
 -- @
-render :: Library s -> s -> Path -> IO (Maybe Text)
+render :: Monad m => Library s m -> s -> Path -> m (Maybe Text)
 render l = renderWith l mempty
 
 -- | Render a template from the library by path, with some additional
@@ -112,7 +112,7 @@ render l = renderWith l mempty
 -- @
 -- renderWith appTemplates extraSubs appState ["path", "to", "template"]
 -- @
-renderWith :: Library s -> Substitutions s -> s -> Path -> IO (Maybe Text)
+renderWith :: Monad m => Library s m -> Substitutions s m -> s -> Path -> m (Maybe Text)
 renderWith l sub s = renderRelative l sub s []
 
 -- | Render a template found relative to current template's path.
@@ -127,14 +127,14 @@ renderWith l sub s = renderRelative l sub s []
 -- ["current"] and target path of ["private", "dashboard"] will find
 -- ["current", "private", "dashboard"]. If there /wasn't/ a ["current",
 -- "private", "dashboard"], it would render ["private", "dashboard"].
-renderRelative :: Library s -> Substitutions s -> s -> Path -> Path -> IO (Maybe Text)
+renderRelative :: Monad m => Library s m -> Substitutions s m -> s -> Path -> Path -> m (Maybe Text)
 renderRelative l sub s givenPath targetPath =
   case findTemplate l givenPath targetPath of
     (pth, Just (Template run)) -> Just <$> evalStateT (run pth sub l) s
     (_, Nothing) -> return Nothing
 
 -- | Load all the templates in some directory into a Library.
-loadTemplates :: FilePath -> Overrides -> IO (Library s)
+loadTemplates :: Monad m => FilePath -> Overrides -> IO (Library s m)
 loadTemplates path overrides =
   do tpls <- getAllTemplates path
      M.fromList <$>
