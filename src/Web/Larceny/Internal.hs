@@ -6,7 +6,7 @@ module Web.Larceny.Internal ( findTemplate
 
 import           Control.Exception
 import           Lens.Micro
-import           Control.Monad.Trans (liftIO)
+import           Control.Monad.Trans (lift)
 import           Control.Monad.State (MonadState, StateT, evalStateT, runStateT, get, modify)
 import qualified Data.HashSet        as HS
 import qualified Data.Map            as M
@@ -24,11 +24,11 @@ import           Web.Larceny.Html    (html5Nodes, html5SelfClosingNodes)
 import           Web.Larceny.Svg     (svgNodes)
 
 -- | Turn lazy text into templates.
-parse :: LT.Text -> Template s
+parse :: Monad m => LT.Text -> Template s m
 parse = parseWithOverrides defaultOverrides
 
 -- | Use overrides when parsing a template.
-parseWithOverrides :: Overrides -> LT.Text -> Template s
+parseWithOverrides :: Monad m => Overrides -> LT.Text -> Template s m
 parseWithOverrides o t =
   let textWithoutDoctype = LT.replace "<!DOCTYPE html>" "<doctype />" t
       (X.Document _ (X.Element _ _ nodes) _) = D.parseLT ("<div>" <> textWithoutDoctype <> "</div>")
@@ -93,7 +93,7 @@ toLarcenyNode _ (X.NodeComment c) = NodeComment c
 toLarcenyNode _ (X.NodeInstruction _) = NodeContent ""
 
 -- | Turn HTML nodes and overrides into templates.
-mk :: Overrides -> [Node] -> Template s
+mk :: Monad m => Overrides -> [Node] -> Template s m
 mk o = f
   where f nodes =
           Template $ \pth m l ->
@@ -101,58 +101,58 @@ mk o = f
                       do s <- get
                          T.concat <$> toUserState (pc s) (process nodes)
 
-toProcessState :: StateT s IO a -> StateT (ProcessContext s) IO a
+toProcessState :: Monad m => StateT s m a -> StateT (ProcessContext s m) m a
 toProcessState f =
   do pc <- get
-     (result, s') <- liftIO $ runStateT f (_pcState pc)
+     (result, s') <- lift $ runStateT f (_pcState pc)
      pcState .= s'
      return result
 
-toUserState :: ProcessContext s -> StateT (ProcessContext s) IO a -> StateT s IO a
+toUserState :: Monad m => ProcessContext s m -> StateT (ProcessContext s m) m a -> StateT s m a
 toUserState pc f =
   do s <- get
-     liftIO $ evalStateT f (pc { _pcState = s })
+     lift $ evalStateT f (pc { _pcState = s })
 
-fillIn :: Blank -> Substitutions s -> Fill s
+fillIn :: Monad m => Blank -> Substitutions s m -> Fill s m
 fillIn tn m = fromMaybe (fallbackFill tn m) (M.lookup tn m)
 
-fallbackFill :: Blank -> Substitutions s -> Fill s
+fallbackFill :: Monad m => Blank -> Substitutions s m -> Fill s m
 fallbackFill FallbackBlank m =  fromMaybe (textFill "") (M.lookup FallbackBlank m)
 fallbackFill (Blank tn) m =
   let fallback = fromMaybe (textFill "") (M.lookup FallbackBlank m) in
   Fill $ \attr (pth, tpl) lib ->
-    do liftIO $ putStrLn ("Larceny: Missing fill for blank " <> show tn <> " in template " <> show pth)
-       unFill fallback attr (pth, tpl) lib
+    -- do liftIO $ putStrLn ("Larceny: Missing fill for blank " <> show tn <> " in template " <> show pth)
+    do unFill fallback attr (pth, tpl) lib
 
-data ProcessContext s = ProcessContext { _pcPath          :: Path
-                                       , _pcSubs          :: Substitutions s
-                                       , _pcLib           :: Library s
-                                       , _pcOverrides     :: Overrides
-                                       , _pcMk            :: [Node] -> Template s
-                                       , _pcNodes         :: [Node]
-                                       , _pcState         :: s }
+data ProcessContext s m = ProcessContext { _pcPath          :: Path
+                                         , _pcSubs          :: Substitutions s m
+                                         , _pcLib           :: Library s m
+                                         , _pcOverrides     :: Overrides
+                                         , _pcMk            :: [Node] -> Template s m
+                                         , _pcNodes         :: [Node]
+                                         , _pcState         :: s }
 
 infix  4 .=
 (.=) :: MonadState s m => ASetter s s a b -> b -> m ()
 l .= b = modify (l .~ b)
 {-# INLINE (.=) #-}
 
-pcSubs :: Lens' (ProcessContext s) (Substitutions s)
+pcSubs :: Lens' (ProcessContext s m) (Substitutions s m)
 pcSubs = lens _pcSubs (\pc s -> pc { _pcSubs = s })
 
-pcNodes :: Lens' (ProcessContext s) [Node]
+pcNodes :: Lens' (ProcessContext s m) [Node]
 pcNodes  = lens _pcNodes (\pc n -> pc { _pcNodes = n })
 
-pcState :: Lens' (ProcessContext s) s
+pcState :: Lens' (ProcessContext s m) s
 pcState = lens _pcState (\pc s -> pc { _pcState = s })
 
-type ProcessT s = StateT (ProcessContext s) IO [Text]
+type ProcessT s m = StateT (ProcessContext s m) m [Text]
 
-add :: Substitutions s -> Template s -> Template s
+add :: Monad m => Substitutions s m -> Template s m -> Template s m
 add mouter tpl =
   Template (\pth minner l -> runTemplate tpl pth (minner `M.union` mouter) l)
 
-process :: [Node] -> ProcessT s
+process :: Monad m => [Node] -> ProcessT s m
 process [] = return []
 process (NodeElement (BindElement atr kids):nextNodes) = do
   pcNodes .= nextNodes
@@ -179,10 +179,11 @@ process (currentNode:nextNodes) = do
 
 -- Add the open tag and attributes, process the children, then close
 -- the tag.
-processPlain :: Name ->
+processPlain :: Monad m =>
+                Name ->
                 Attributes ->
                 [Node] ->
-                ProcessT s
+                ProcessT s m
 processPlain tagName atr kids = do
   pc <- get
   atrs <- attrsToText atr
@@ -206,7 +207,7 @@ tagToText overrides (Name mPf name) atrs processed =
            ++ processed
            ++ ["</" <> prefix <> name <> ">"]
 
-attrsToText :: Attributes -> StateT (ProcessContext s) IO Text
+attrsToText :: Monad m => Attributes -> StateT (ProcessContext s m) m Text
 attrsToText attrs =
   T.concat <$> mapM attrToText (M.toList attrs)
   where attrToText (k,v) = do
@@ -217,7 +218,7 @@ attrsToText attrs =
         toText (k, "") = " " <> k
         toText (k, v) = " " <> k <> "=\"" <> T.strip v <> "\""
 
-fillAttrs :: Attributes -> StateT (ProcessContext s) IO Attributes
+fillAttrs :: Monad m => Attributes -> StateT (ProcessContext s m) m Attributes
 fillAttrs attrs =  M.fromList <$> mapM fill (M.toList attrs)
   where fill p = do
           let (unboundKeys, unboundValues) = eUnboundAttrs p
@@ -225,7 +226,7 @@ fillAttrs attrs =  M.fromList <$> mapM fill (M.toList attrs)
           vals <- T.concat <$> mapM fillAttr unboundValues
           return (keys, vals)
 
-fillAttr :: Either Text Blank -> StateT (ProcessContext s) IO Text
+fillAttr :: Monad m => Either Text Blank -> StateT (ProcessContext s m) m Text
 fillAttr eBlankText =
   do (ProcessContext pth m l _ mko _ _) <- get
      toProcessState $
@@ -236,10 +237,11 @@ fillAttr eBlankText =
 -- Look up the Fill for the hole.  Apply the Fill to a map of
 -- attributes, a Template made from the child nodes (adding in the
 -- outer substitution) and the library.
-processBlank :: Text ->
+processBlank :: Monad m =>
+                Text ->
                 Attributes ->
                 [Node] ->
-                ProcessT s
+                ProcessT s m
 processBlank tagName atr kids = do
   (ProcessContext pth m l _ mko _ _) <- get
   filled <- fillAttrs atr
@@ -247,9 +249,10 @@ processBlank tagName atr kids = do
                     filled
                     (pth, add m (mko kids)) l]
 
-processBind :: Attributes ->
+processBind :: Monad m =>
+               Attributes ->
                [Node] ->
-               ProcessT s
+               ProcessT s m
 processBind atr kids = do
   (ProcessContext pth m l _ mko nodes _) <- get
   let tagName = atr M.! "tag"
@@ -262,9 +265,10 @@ processBind atr kids = do
 -- create a substitution for the content hole using the child elements
 -- of the apply tag, then run the template with that substitution
 -- combined with outer substitution and the library.
-processApply :: Attributes ->
+processApply :: Monad m =>
+                Attributes ->
                 [Node] ->
-                ProcessT s
+                ProcessT s m
 processApply atr kids = do
   (ProcessContext pth m l _ mko _ _) <- get
   filledAttrs <- fillAttrs atr
@@ -274,10 +278,11 @@ processApply atr kids = do
                          rawTextFill contentTpl)]
   sequence [ toProcessState $ runTemplate tplToApply absolutePath (contentSub `M.union` m) l ]
 
-findTemplateFromAttrs :: Path ->
-                         Library s ->
+findTemplateFromAttrs :: Monad m =>
+                         Path ->
+                         Library s m ->
                          Attributes ->
-                         (Path, Template s)
+                         (Path, Template s m)
 findTemplateFromAttrs pth l atr =
   let tplPath = T.splitOn "/" $ fromMaybe (throw $ AttrMissing "template")
                                           (M.lookup "template" atr) in
@@ -285,7 +290,7 @@ findTemplateFromAttrs pth l atr =
     (_, Nothing) -> throw $ ApplyError tplPath pth
     (targetPath, Just tpl) -> (targetPath, tpl)
 
-findTemplate :: Library s -> Path -> Path -> (Path, Maybe (Template s))
+findTemplate :: Monad m => Library s m -> Path -> Path -> (Path, Maybe (Template s m))
 findTemplate lib [] targetPath = (targetPath, M.lookup targetPath lib)
 findTemplate lib pth' targetPath =
   case M.lookup (pth' ++ targetPath) lib of

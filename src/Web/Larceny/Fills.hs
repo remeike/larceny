@@ -63,10 +63,10 @@ import           Web.Larceny.Types
 -- <\/if>
 -- @
 -- > This list is not empty.
-ifFill :: Fill s
+ifFill :: Monad m => Fill s m
 ifFill =
   useAttrs (a "condition" % a "exists") ifFill'
-  where ifFill' :: Maybe Bool -> Maybe Text -> Fill s
+  where ifFill' :: Monad m => Maybe Bool -> Maybe Text -> Fill s m
         ifFill' mCondition mExisting =
           let condition = fromMaybe True mCondition
               existing = fromMaybe "exist" mExisting
@@ -82,7 +82,7 @@ ifFill =
 -- @
 -- textFill "This text will be escaped and displayed in place of the blank"
 -- @
-textFill :: Text -> Fill s
+textFill :: Monad m => Text -> Fill s m
 textFill t = textFill' (return t)
 
 -- | A plain text fill.
@@ -90,7 +90,7 @@ textFill t = textFill' (return t)
 -- @
 -- textFill "This text will be displayed in place of the blank, <em>unescaped</em>"
 -- @
-rawTextFill :: Text -> Fill s
+rawTextFill :: Monad m => Text -> Fill s m
 rawTextFill t = rawTextFill' (return t)
 
 -- | Use state or IO, then fill in some text.
@@ -99,7 +99,7 @@ rawTextFill t = rawTextFill' (return t)
 -- -- getTextFromDatabase :: StateT () IO Text
 -- textFill' getTextFromDatabase
 -- @
-textFill' :: StateT s IO Text -> Fill s
+textFill' :: Monad m => StateT s m Text -> Fill s m
 textFill' t = Fill $ \_m _t _l -> HE.text <$> t
 
 -- | Use state or IO, then fill in some text.
@@ -108,7 +108,7 @@ textFill' t = Fill $ \_m _t _l -> HE.text <$> t
 -- -- getTextFromDatabase :: StateT () IO Text
 -- textFill' getTextFromDatabase
 -- @
-rawTextFill' :: StateT s IO Text -> Fill s
+rawTextFill' :: Monad m => StateT s m Text -> Fill s m
 rawTextFill' t = Fill $ \_m _t _l -> t
 
 -- | Create substitutions for each element in a list and fill the child nodes
@@ -121,15 +121,16 @@ rawTextFill' t = Fill $ \_m _t _l -> t
 -- @
 --
 -- > Bonnie Thunders Donna Matrix Beyonslay
-mapSubs :: (a -> Substitutions s)
+mapSubs :: Monad m
+        => (a -> Substitutions s m)
         -> [a]
-        -> Fill s
+        -> Fill s m
 mapSubs f xs = Fill $ \_attrs (pth, tpl) lib ->
     T.concat <$>  mapM (\n -> runTemplate tpl pth (f n) lib) xs
 
 -- | Create substitutions for each element in a list (using IO/state if
 -- needed) and fill the child nodes with those substitutions.
-mapSubs' :: (a -> StateT s IO (Substitutions s)) -> [a] -> Fill s
+mapSubs' :: Monad m => (a -> StateT s m (Substitutions s m)) -> [a] -> Fill s m
 mapSubs' f xs = Fill $
   \_m (pth, tpl) lib ->
     T.concat <$>  mapM (\x -> do
@@ -145,7 +146,7 @@ mapSubs' f xs = Fill $
 -- @
 --
 -- > <p>Same</p>
-fillChildren :: Fill s
+fillChildren :: Monad m => Fill s m
 fillChildren = fillChildrenWith mempty
 
 -- | Fill in the child nodes of the blank with new substitutions.
@@ -156,7 +157,7 @@ fillChildren = fillChildrenWith mempty
 -- @
 --
 -- > Beyonslay
-fillChildrenWith :: Substitutions s -> Fill s
+fillChildrenWith :: Monad m => Substitutions s m -> Fill s m
 fillChildrenWith m = maybeFillChildrenWith (Just m)
 
 -- | Use substitutions with State and IO.
@@ -168,7 +169,7 @@ fillChildrenWith m = maybeFillChildrenWith (Just m)
 -- @
 --
 -- > This template did IO!
-fillChildrenWith' :: StateT s IO (Substitutions s) -> Fill s
+fillChildrenWith' :: Monad m => StateT s m (Substitutions s m) -> Fill s m
 fillChildrenWith' m = maybeFillChildrenWith' (Just <$> m)
 
 -- | Fill with substitutions if those substitutions are provided.
@@ -180,7 +181,7 @@ fillChildrenWith' m = maybeFillChildrenWith' (Just <$> m)
 -- @
 --
 -- > Bonnie Thunders
-maybeFillChildrenWith :: Maybe (Substitutions s) -> Fill s
+maybeFillChildrenWith :: Monad m => Maybe (Substitutions s m) -> Fill s m
 maybeFillChildrenWith Nothing = textFill ""
 maybeFillChildrenWith (Just s) = Fill $ \_s (pth, Template tpl) l ->
   tpl pth s l
@@ -197,7 +198,7 @@ maybeFillChildrenWith (Just s) = Fill $ \_s (pth, Template tpl) l ->
 -- @
 --
 -- > Bonnie Thunders
-maybeFillChildrenWith' :: StateT s IO (Maybe (Substitutions s)) -> Fill s
+maybeFillChildrenWith' :: Monad m => StateT s m (Maybe (Substitutions s m)) -> Fill s m
 maybeFillChildrenWith' sMSubs = Fill $ \_s (pth, Template tpl) l -> do
   mSubs <- sMSubs
   case mSubs of
@@ -220,9 +221,10 @@ maybeFillChildrenWith' sMSubs = Fill $ \_s (pth, Template tpl) l -> do
 -- attributes that you can use in Fills. You can use `a` and `%` to
 -- create these. The second argument is a function that uses the
 -- values of those attributes to create a Fill.
-useAttrs :: (Attributes -> k -> Fill s)
+useAttrs :: Monad m
+         => (Attributes -> k -> Fill s m)
          ->  k
-         ->  Fill s
+         ->  Fill s m
 useAttrs k fill= Fill $ \atrs (pth, tpl) lib ->
   unFill (k atrs fill) atrs (pth, tpl) lib
 

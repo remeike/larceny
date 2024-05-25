@@ -43,7 +43,7 @@ tpl4 = "<body>                             \
 \          </ul>                           \
 \        </body>"
 
-subst :: Substitutions ()
+subst :: Substitutions () IO
 subst = subs [ ("site-title", textFill "Gotham Girls roster")
              , ("name", textFill "Gotham Girls")
              , ("skater", fillChildrenWith $ subs [("name", textFill "Amy Roundhouse")])
@@ -62,14 +62,14 @@ subst = subs [ ("site-title", textFill "Gotham Girls roster")
               shorten :: Int -> Text -> Text
               shorten n t = T.take n (T.strip t) <> "..."
 
-modifyInnerText :: (Text -> Text) -> Fill ()
+modifyInnerText :: (Text -> Text) -> Fill () IO
 modifyInnerText f = Fill $
   \_attrs (_pth, tpl) _l ->
     liftIO $ do
       t' <- evalStateT (runTemplate tpl ["default"] mempty mempty) ()
       return $ f t'
 
-tplLib :: Library ()
+tplLib :: Library () IO
 tplLib = M.fromList [(["skater"], parse "Beyonslay")]
 
 tpl5 :: Text
@@ -217,7 +217,7 @@ data Client = Client { clientName :: Text
                      , clientUrl  :: Text
                      , clientLogo :: Text } deriving (Eq, Show)
 
-clientFill :: Fill ()
+clientFill :: Fill () IO
 clientFill = mapSubs (\(Client name url logo) ->
                           subs [ ("client-name", textFill name)
                                , ("client-url", textFill url)
@@ -293,7 +293,7 @@ footerTpl =
         \      </div> <!-- .row -->\n\
         \    </div> <!-- .container -->\n"
 
-positionTplLib :: Library ()
+positionTplLib :: Library () IO
 positionTplLib = M.fromList
   [ (["header"],  parse headerTpl)
   , (["clients"], parse clientsTpl)

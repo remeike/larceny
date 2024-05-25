@@ -33,15 +33,15 @@ l .= b = modify (l .~ b)
 
 data LarcenyState =
   LarcenyState { _lPath      :: [Text]
-               , _lSubs      :: Substitutions ()
-               , _lLib       :: Library ()
+               , _lSubs      :: Substitutions () IO
+               , _lLib       :: Library () IO
                , _lOverrides :: Overrides }
 
 lPath :: Lens' LarcenyState [Text]
 lPath = lens _lPath (\ls p -> ls { _lPath = p })
-lSubs :: Lens' LarcenyState (Substitutions ())
+lSubs :: Lens' LarcenyState (Substitutions () IO)
 lSubs = lens _lSubs (\ls s -> ls { _lSubs = s })
-lLib :: Lens' LarcenyState (Library ())
+lLib :: Lens' LarcenyState (Library () IO)
 lLib = lens _lLib (\ls l -> ls { _lLib = l })
 lOverrides :: Lens' LarcenyState Overrides
 lOverrides = lens _lOverrides (\ls o -> ls { _lOverrides = o })
@@ -674,11 +674,11 @@ attrTests =
                                         "A really long description"
                                         <> "..."))]
         "<l:desc length=\"infinite\" />" `shouldErrorM` (== AttrUnparsable "Int" "length")
-  where descFill :: Fill ()
+  where descFill :: Fill () IO
         descFill =
           useAttrs (a"length" % a"ending") descFunc
 
-        descFunc :: Int -> Maybe Text -> Fill ()
+        descFunc :: Int -> Maybe Text -> Fill () IO
         descFunc n e = Fill $
           do let ending = fromMaybe "..."  e
              \_attrs (_pth, tpl) _l -> liftIO $ do
