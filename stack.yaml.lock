@@ -7,13 +7,13 @@ packages:
 - completed:
     hackage: logging-3.0.5@sha256:88096d3124fce9a19af3720f751e1a354d866ed5030d2e5197238d2277cdb2f2,2374
     pantry-tree:
-      size: 264
       sha256: 35c4c46138a30e516c2f27dfc51a993e7d7946af0de1a826f18b71a854c2da21
+      size: 264
   original:
     hackage: logging-3.0.5
 snapshots:
 - completed:
+    sha256: 95f014df58d0679b1c4a2b7bf2b652b61da8d30de5f571abb0d59015ef678646
     size: 509471
     url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/12/26.yaml
-    sha256: 95f014df58d0679b1c4a2b7bf2b652b61da8d30de5f571abb0d59015ef678646
   original: lts-12.26
