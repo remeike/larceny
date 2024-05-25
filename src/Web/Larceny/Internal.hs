@@ -172,8 +172,7 @@ process (currentNode:nextNodes) = do
           return [t]
       NodeComment c ->
           return ["<!--" <> c <> "-->"]
-      _ ->
-          return []
+
   restOfNodes <- process nextNodes
   return $ processedNode ++ restOfNodes
 
@@ -227,12 +226,17 @@ fillAttrs attrs =  M.fromList <$> mapM fill (M.toList attrs)
           return (keys, vals)
 
 fillAttr :: Monad m => Either Text Blank -> StateT (ProcessContext s m) m Text
-fillAttr eBlankText =
-  do (ProcessContext pth m l _ mko _ _) <- get
-     toProcessState $
-       case eBlankText of
-         Right hole -> unFill (fillIn hole m) mempty (pth, mko []) l
-         Left text -> return text
+fillAttr eBlankText = do
+  ProcessContext pth m l _ mko _ _ <- get
+  case eBlankText of
+    Right hole@(Blank txt) | T.isInfixOf "?" txt || T.isInfixOf "->" txt ->
+      fmap mconcat $ process $ attrPath hole
+
+    Right hole ->
+      toProcessState $ unFill (fillIn hole m) mempty (pth, mko []) l
+
+    Left text ->
+      toProcessState $ return text
 
 -- Look up the Fill for the hole.  Apply the Fill to a map of
 -- attributes, a Template made from the child nodes (adding in the
@@ -311,3 +315,52 @@ eUnboundAttrs (name, value) = do
 
 {-# ANN module ("HLint: ignore Redundant lambda" :: String) #-}
 {-# ANN module ("HLint: ignore Use first" :: String) #-}
+
+
+attrNodes :: Blank -> [Node]
+attrNodes (Blank txt) =
+  case T.splitOn "?" txt of
+    [tag, params] ->
+      let
+        attrs =
+          M.fromList $
+            fmap
+              ( \kv ->
+                case T.splitOn "=" kv of
+                  [k, v] -> (k, v)
+                  _      -> (kv, "")
+              )
+              $ T.splitOn "&" params
+      in
+      [NodeElement $ BlankElement (Name Nothing tag) attrs []]
+
+    _ ->
+      []
+
+
+attrPath :: Blank -> [Node]
+attrPath (Blank txt) =
+  let
+    attrNode t children =
+      case T.splitOn "?" t of
+        [tag] ->
+          [NodeElement $ BlankElement (Name Nothing tag) mempty children]
+
+        [tag, params] ->
+          let
+            attrs =
+              M.fromList $
+                fmap
+                  ( \kv ->
+                    case T.splitOn "=" kv of
+                      [k, v] -> (k, v)
+                      _      -> (kv, "")
+                  )
+                  $ T.splitOn "&" params
+          in
+          [NodeElement $ BlankElement (Name Nothing tag) attrs children]
+
+        _ ->
+          []
+  in
+  foldr attrNode [] $ T.splitOn "->" txt

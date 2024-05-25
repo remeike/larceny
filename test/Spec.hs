@@ -347,6 +347,36 @@ spec = hspec $ do
         "<p id=\"${skater}\"><skater /></p>"
           `shouldRenderM` "<p id=\"Beyonslay\">Beyonslay</p>"
 
+      it "should apply substitutions with attributes to attributes" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ("skater", textFill "Beyonslay")
+            , ("color", useAttrs (a"set")(textFill . fromMaybe "brown"))
+            ]
+        "<p id=\"${color}\"><skater /></p>"
+          `shouldRenderM` "<p id=\"brown\">Beyonslay</p>"
+        "<p id=\"${color?set=yellow}\"><skater /></p>"
+          `shouldRenderM` "<p id=\"yellow\">Beyonslay</p>"
+
+
+      it "should apply nested substitutions with attributes to attributes" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ("skater", textFill "Beyonslay")
+            , ("parent", fillChildrenWith $ subs [("child", textFill "toy")])
+            , ("grand-parent",
+                fillChildrenWith $ subs
+                  [ ("parent"
+                    , fillChildrenWith $ subs [("child", textFill "onesie")]
+                    )
+                  ]
+              )
+            ]
+        "<p id=\"${parent->child}\"><skater /></p>"
+          `shouldRenderM` "<p id=\"toy\">Beyonslay</p>"
+        "<p id=\"${grand-parent->parent->child}\"><skater /></p>"
+          `shouldRenderM` "<p id=\"onesie\">Beyonslay</p>"
+
       it "should apply substitutions to attributes inside of blanks" $ do
         hLarcenyState.lSubs .= subs [("skater", useAttrs (a"name")
                                        (\name -> textFill $ "Skater: " <> name))
