@@ -219,7 +219,7 @@ attrsToText attrs =
           if T.any (=='\"') v then
             " " <> k <> "=\'" <> T.strip v <> "\'"
           else
-            " " <> k <> "=\"" <> T.strip v <> "\""
+            " " <> k <> "=\'" <> T.strip v <> "\'"
 
 fillAttrs :: Monad m => Attributes -> StateT (ProcessContext s m) m Attributes
 fillAttrs attrs =  M.fromList <$> mapM fill (M.toList attrs)
