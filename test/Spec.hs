@@ -441,6 +441,11 @@ spec = hspec $ do
       it "should allow self-closing tags" $ do
         "<br />" `shouldRenderM` "<br />"
 
+    describe "quotes" $ do
+      it "should handle single quote attributes" $ do
+        "<div json='{\"A\": \"B\"}'>todo</div>"
+          `shouldRenderM` "<div json='{\"A\": \"B\"}'>todo</div>"
+
     describe "selected" $ do
       it "should allow attributes that aren't k-v pairs" $ do
         "<option selected>Hello</option>" `shouldRenderM` "<option selected>Hello</option>"
