@@ -215,7 +215,11 @@ attrsToText attrs =
           vals <- T.concat <$> mapM fillAttr unboundV
           return $ toText (keys, vals)
         toText (k, "") = " " <> k
-        toText (k, v) = " " <> k <> "=\"" <> T.strip v <> "\""
+        toText (k, v) =
+          if T.any (=='\"') v then
+            " " <> k <> "=\'" <> T.strip v <> "\'"
+          else
+            " " <> k <> "=\"" <> T.strip v <> "\""
 
 fillAttrs :: Monad m => Attributes -> StateT (ProcessContext s m) m Attributes
 fillAttrs attrs =  M.fromList <$> mapM fill (M.toList attrs)
@@ -308,6 +312,7 @@ eUnboundAttrs (name, value) = do
         case T.splitOn "}" w of
           [_] -> [Left w]
           ["",_] -> [Left ("${" <> w)]
+          (word: rest) | T.any (=='{') word -> Left (word <> "}") : map Left rest
           (word: rest) -> Right (Blank word) : map Left rest
           _ -> [Left w]
   ( concatMap mWord (possibleWords name)
