@@ -11,6 +11,7 @@
 import           Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
 import           Control.Exception       (Exception, throw, try)
 import           Lens.Micro
+import           Control.Monad           (when)
 import           Control.Monad.State     (StateT (..), evalStateT, get, modify,
                                           runStateT)
 import qualified Control.Monad.State     as S
@@ -176,6 +177,40 @@ spec = hspec $ do
         let customComponentScript =
               "<script>console.log(\"<custom-component />\")console.log(\"<custom-component />\")</script>"
         customComponentScript `shouldRenderM` customComponentScript
+
+      it "should return final state" $ do
+        let
+          mySubs =
+            subs
+              [ ( "who"
+                , Fill $
+                    \_m tpl lib -> do
+                      modify (+1)
+                      unFill (textFill "world") _m tpl lib
+                )
+              , ( "count"
+                , Fill $
+                    \_m tpl lib -> do
+                      n <- get
+                      unFill (textFill (T.pack $ show n)) _m tpl lib
+                )
+              ]
+
+          myTpl = runTemplate (parse "<p>hello <who/> (<count/>)</p>") ["default"] mySubs mempty :: StateT Int IO Text
+
+        (txt, n) <- liftIO $ runStateT myTpl 1
+
+        when (txt /= "<p>hello world (2)</p>")
+          $ setResult
+          $ H.Failure Nothing
+          $ H.Reason
+          $ "Expected <p>hello world (2)</p> but got " <> T.unpack txt
+
+        when (n /= 2)
+          $ setResult
+          $ H.Failure Nothing $ H.Reason $ "Expected 2 but got " <> show n
+
+        setResult H.Success
 
     describe "add" $ do
       it "should allow overriden tags" $ do
