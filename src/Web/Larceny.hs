@@ -130,7 +130,7 @@ renderWith l sub s = renderRelative l sub s []
 renderRelative :: Monad m => Library s m -> Substitutions s m -> s -> Path -> Path -> m (Maybe Text)
 renderRelative l sub s givenPath targetPath =
   case findTemplate l givenPath targetPath of
-    (pth, Just (Template run)) -> Just <$> evalStateT (run pth sub l) s
+    (pth, Just (Template run)) -> (Just . T.concat) <$> evalStateT (run pth sub l) s
     (_, Nothing) -> return Nothing
 
 -- | Load all the templates in some directory into a Library.

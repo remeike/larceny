@@ -69,7 +69,7 @@ instance Hashable Blank where
 newtype Fill s m = Fill { unFill :: Attributes
                                -> (Path, Template s m)
                                -> Library s m
-                               -> StateT s m Text }
+                               -> StateT s m [Text] }
 
 -- | The Blank's attributes, a map from the attribute name to
 -- it's value.
@@ -118,7 +118,7 @@ fallbackSub fill = M.fromList [(FallbackBlank, fill)]
 newtype Template s m = Template { runTemplate :: Path
                                               -> Substitutions s m
                                               -> Library s m
-                                              -> StateT s m Text }
+                                              -> StateT s m [Text] }
 
 -- | The path to a template.
 type Path = [Text]

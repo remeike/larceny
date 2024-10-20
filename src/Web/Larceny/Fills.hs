@@ -100,7 +100,7 @@ rawTextFill t = rawTextFill' (return t)
 -- textFill' getTextFromDatabase
 -- @
 textFill' :: Monad m => StateT s m Text -> Fill s m
-textFill' t = Fill $ \_m _t _l -> HE.text <$> t
+textFill' t = Fill $ \_m _t _l -> fmap pure $ HE.text <$> t
 
 -- | Use state or IO, then fill in some text.
 --
@@ -109,7 +109,7 @@ textFill' t = Fill $ \_m _t _l -> HE.text <$> t
 -- textFill' getTextFromDatabase
 -- @
 rawTextFill' :: Monad m => StateT s m Text -> Fill s m
-rawTextFill' t = Fill $ \_m _t _l -> t
+rawTextFill' t = Fill $ \_m _t _l -> fmap pure t
 
 -- | Create substitutions for each element in a list and fill the child nodes
 -- with those substitutions.
@@ -126,14 +126,15 @@ mapSubs :: Monad m
         -> [a]
         -> Fill s m
 mapSubs f xs = Fill $ \_attrs (pth, tpl) lib ->
-    T.concat <$>  mapM (\n -> runTemplate tpl pth (f n) lib) xs
+    -- (pure . T.concat . concat)
+    concat  <$>  mapM (\n -> runTemplate tpl pth (f n) lib) xs
 
 -- | Create substitutions for each element in a list (using IO/state if
 -- needed) and fill the child nodes with those substitutions.
 mapSubs' :: Monad m => (a -> StateT s m (Substitutions s m)) -> [a] -> Fill s m
 mapSubs' f xs = Fill $
   \_m (pth, tpl) lib ->
-    T.concat <$>  mapM (\x -> do
+    mconcat <$> mapM (\x -> do
                            s' <- f x
                            runTemplate tpl pth s' lib) xs
 
@@ -202,7 +203,7 @@ maybeFillChildrenWith' :: Monad m => StateT s m (Maybe (Substitutions s m)) -> F
 maybeFillChildrenWith' sMSubs = Fill $ \_s (pth, Template tpl) l -> do
   mSubs <- sMSubs
   case mSubs of
-    Nothing -> return ""
+    Nothing -> return [""]
     Just s  -> tpl pth s l
 
 -- | Use attributes from the the blank as arguments to the fill.

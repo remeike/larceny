@@ -117,7 +117,7 @@ renderM :: Text -> LarcenyHspecM Text
 renderM templateText = do
   (LarcenyHspecState _ (LarcenyState p s l o)) <- S.get
   let tpl = parseWithOverrides o (LT.fromStrict templateText)
-  liftIO $ evalStateT (runTemplate tpl p s l) ()
+  liftIO $ fmap T.concat $ evalStateT (runTemplate tpl p s l) ()
 
 shouldRenderM :: Text -> Text -> LarcenyHspecM ()
 shouldRenderM templateText output = do
@@ -196,7 +196,7 @@ spec = hspec $ do
                 )
               ]
 
-          myTpl = runTemplate (parse "<p>hello <who/> (<count/>)</p>") ["default"] mySubs mempty :: StateT Int IO Text
+          myTpl = (fmap T.concat $ runTemplate (parse "<p>hello <who/> (<count/>)</p>") ["default"] mySubs mempty) :: StateT Int IO Text
 
         (txt, n) <- liftIO $ runStateT myTpl 1
 
@@ -360,9 +360,9 @@ spec = hspec $ do
       it "should allow you to write functions for fills" $ do
         let subs' =
               subs [("desc",
-                     Fill $ \m _t _l -> return $ T.take (read $ T.unpack (m M.! "length"))
+                     Fill $ \m _t _l -> return [T.take (read $ T.unpack (m M.! "length"))
                                         "A really long description"
-                                        <> "...")]
+                                        <> "..."])]
         hLarcenyState.lSubs .= subs'
         "<l:desc length=\"10\" />" `shouldRenderM` "A really l..."
 
@@ -370,9 +370,9 @@ spec = hspec $ do
         let subs' =
               subs [("desc", Fill $
                           \m _t _l -> do liftIO $ putStrLn "***********\nHello World\n***********"
-                                         return $ T.take (read $ T.unpack (m M.! "length"))
+                                         return [T.take (read $ T.unpack (m M.! "length"))
                                            "A really long description"
-                                           <> "...")]
+                                           <> "..."])]
         hLarcenyState.lSubs .= subs'
         "<l:desc length=\"10\" />" `shouldRenderM` "A really l..."
 
@@ -448,7 +448,7 @@ spec = hspec $ do
            `shouldRenderM` "<p class=\"lots of space\"></p>"
 
       it "should know what the template path is" $ do
-        let fill = Fill $ \_ (p, _) _ -> return (head p)
+        let fill = Fill $ \_ (p, _) _ -> return p
         hLarcenyState.lSubs .= subs [("template", fill)]
         "<p class=\"${template}\"></p>"
           `shouldRenderM` "<p class=\"default\"></p>"
@@ -526,7 +526,7 @@ statefulTests =
                     (subs [("x", Fill $ \_ _ _ ->
                                    do modify ((+1) :: Int -> Int)
                                       s <- get
-                                      return (T.pack (show s)))])
+                                      return [T.pack (show s)])])
                     0
                     ["default"]
          `shouldReturn` Just "12"
@@ -544,7 +544,7 @@ statefulTests =
                     (subs [("x", Fill $ \_ _ _ ->
                                    do modify ((+1) :: Int -> Int)
                                       s <- get
-                                      return (T.pack (show s)))])
+                                      return [T.pack (show s)])])
                     0
                     ["default"]
          `shouldReturn` Just "12"
@@ -713,7 +713,7 @@ attrTests =
               useAttrs (a"length")
                        (\n -> Fill $ \_attrs (_pth, tpl) _l -> liftIO $ do
                            t' <- evalStateT (runTemplate tpl ["default"] mempty mempty) ()
-                           return $ T.take n t' <> "...")
+                           return [T.take n (T.concat t') <> "..."])
         hLarcenyState.lSubs .= subs [ ("adverb", textFill "really")
                                     , ("desc", descTplFill)]
         "<l:desc length=\"10\">A <adverb /> long description</desc>"
@@ -753,6 +753,6 @@ attrTests =
           do let ending = fromMaybe "..."  e
              \_attrs (_pth, tpl) _l -> liftIO $ do
                renderedText <- evalStateT (runTemplate tpl ["default"] mempty mempty) ()
-               return $ T.take n renderedText <> ending
+               return [T.take n (T.concat renderedText) <> ending]
 
 {-# ANN module ("HLint: ignore Redundant do" :: String) #-}

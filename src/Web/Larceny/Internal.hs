@@ -22,7 +22,7 @@ import           Web.Larceny.Types
 import           Web.Larceny.Fills
 import           Web.Larceny.Html    (html5Nodes, html5SelfClosingNodes)
 import           Web.Larceny.Svg     (svgNodes)
-
+import Debug.Trace
 -- | Turn lazy text into templates.
 parse :: Monad m => LT.Text -> Template s m
 parse = parseWithOverrides defaultOverrides
@@ -99,7 +99,7 @@ mk o = f
           Template $ \pth m l ->
                       let pc = ProcessContext pth m l o f nodes in
                       do s <- get
-                         T.concat <$> toUserState (pc s) (process nodes)
+                         toUserState (pc s) (process nodes)
 
 toProcessState :: Monad m => StateT s m a -> StateT (ProcessContext s m) m a
 toProcessState f =
@@ -239,7 +239,7 @@ fillAttr eBlankText = do
       fmap mconcat $ process $ attrPath hole
 
     Right hole ->
-      toProcessState $ unFill (fillIn hole m) mempty (pth, mko []) l
+      fmap T.concat $ toProcessState $ unFill (fillIn hole m) mempty (pth, mko []) l
 
     Left text ->
       toProcessState $ return text
@@ -255,9 +255,7 @@ processBlank :: Monad m =>
 processBlank tagName atr kids = do
   (ProcessContext pth m l _ mko _ _) <- get
   filled <- fillAttrs atr
-  sequence [ toProcessState $ unFill (fillIn (Blank tagName) m)
-                    filled
-                    (pth, add m (mko kids)) l]
+  toProcessState $ unFill (fillIn (Blank tagName) m) filled (pth, add m (mko kids)) l
 
 processBind :: Monad m =>
                Attributes ->
@@ -283,10 +281,10 @@ processApply atr kids = do
   (ProcessContext pth m l _ mko _ _) <- get
   filledAttrs <- fillAttrs atr
   let (absolutePath, tplToApply) = findTemplateFromAttrs pth l filledAttrs
-  contentTpl <- toProcessState $ runTemplate (mko kids) pth m l
+  contentTpl <- fmap T.concat $ toProcessState $ runTemplate (mko kids) pth m l
   let contentSub = subs [("apply-content",
                          rawTextFill contentTpl)]
-  sequence [ toProcessState $ runTemplate tplToApply absolutePath (contentSub `M.union` m) l ]
+  toProcessState $ runTemplate tplToApply absolutePath (contentSub `M.union` m) l
 
 findTemplateFromAttrs :: Monad m =>
                          Path ->
