@@ -53,9 +53,13 @@ toLarcenyName :: X.Name -> Name
 toLarcenyName (X.Name tn _ _) =
   case T.stripPrefix "l:" tn of
     Just larcenyTagName -> Name (Just "l") larcenyTagName
-    Nothing -> case T.stripPrefix "svg:" tn of
-                 Just svgTagName -> Name (Just "svg") svgTagName
-                 Nothing -> Name Nothing tn
+    Nothing ->
+      case T.stripPrefix "svg:" tn of
+        Just svgTagName -> Name (Just "svg") svgTagName
+        Nothing ->
+          case T.stripPrefix "x:" tn of
+            Just xmlTagName -> Name (Just "x") xmlTagName
+            Nothing -> Name Nothing tn
 
 toLarcenyNode :: Overrides -> X.Node -> Node
 toLarcenyNode o (X.NodeElement (X.Element tn atr nodes)) =
@@ -82,6 +86,8 @@ toLarcenyNode o (X.NodeElement (X.Element tn atr nodes)) =
     -- otherwise, it's a Blank
     Name (Just "svg") name ->
       NodeElement (PlainElement (Name (Just "svg") name) attrs larcenyNodes)
+    Name (Just "x") name ->
+      NodeElement (PlainElement (Name Nothing name) attrs larcenyNodes)
     Name (Just "l") name ->
       NodeElement (BlankElement (Name (Just "l") name) attrs larcenyNodes)
     Name pf name | HS.member name allPlainNodes ->

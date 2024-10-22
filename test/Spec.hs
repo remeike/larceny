@@ -212,6 +212,11 @@ spec = hspec $ do
 
         setResult H.Success
 
+    describe "xml" $ do
+      it "should render xml" $ do
+        "<x:hello><x:world>Hi</x:world></x:hello>" `shouldRenderM`
+          "<hello><world>Hi</world></hello>"
+
     describe "add" $ do
       it "should allow overriden tags" $ do
         hLarcenyState.lSubs .= subst
