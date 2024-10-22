@@ -477,8 +477,12 @@ spec = hspec $ do
         "<br />" `shouldRenderM` "<br />"
 
     describe "quotes" $ do
-      it "should handle single quote attributes" $ do
+      fit "should handle single quote attributes" $ do
+        hLarcenyState.lSubs .=
+          subs [("obj", rawTextFill "{\"A\": \"B\"}")]
         "<div json='{\"A\": \"B\"}'>todo</div>"
+          `shouldRenderM` "<div json='{\"A\": \"B\"}'>todo</div>"
+        "<div json='${obj}'>todo</div>"
           `shouldRenderM` "<div json='{\"A\": \"B\"}'>todo</div>"
 
     describe "selected" $ do
