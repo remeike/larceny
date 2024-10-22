@@ -2,7 +2,9 @@
 
 module Web.Larceny.Internal ( findTemplate
                             , parse
-                            , parseWithOverrides) where
+                            , parseWithOverrides
+                            , parseJSON
+                            ) where
 
 import           Control.Exception
 import           Lens.Micro
@@ -22,7 +24,8 @@ import           Web.Larceny.Types
 import           Web.Larceny.Fills
 import           Web.Larceny.Html    (html5Nodes, html5SelfClosingNodes)
 import           Web.Larceny.Svg     (svgNodes)
-import Debug.Trace
+
+
 -- | Turn lazy text into templates.
 parse :: Monad m => LT.Text -> Template s m
 parse = parseWithOverrides defaultOverrides
@@ -32,7 +35,17 @@ parseWithOverrides :: Monad m => Overrides -> LT.Text -> Template s m
 parseWithOverrides o t =
   let textWithoutDoctype = LT.replace "<!DOCTYPE html>" "<doctype />" t
       (X.Document _ (X.Element _ _ nodes) _) = D.parseLT ("<div>" <> textWithoutDoctype <> "</div>")
-  in mk o $! map (toLarcenyNode o) nodes
+  in mk defaultOptions o $! map (toLarcenyNode o) nodes
+
+-- | TODO
+parseJSON :: Monad m => LT.Text -> Template s m
+parseJSON t =
+  let
+    X.Document _ (X.Element _ _ nodes) _ =
+      D.parseLT ("<div>" <> t <> "</div>")
+  in
+  mk defaultOptions { optJson = True } defaultOverrides
+    $! map (toLarcenyNode defaultOverrides) nodes
 
 -- | Phases of the template parsing/rendering process: 1. Parse the document
 --     into HTML (or really, XML) nodes 2. Turn those nodes into Larceny nodes,
@@ -93,13 +106,32 @@ toLarcenyNode _ (X.NodeComment c) = NodeComment c
 toLarcenyNode _ (X.NodeInstruction _) = NodeContent ""
 
 -- | Turn HTML nodes and overrides into templates.
-mk :: Monad m => Overrides -> [Node] -> Template s m
-mk o = f
-  where f nodes =
-          Template $ \pth m l ->
-                      let pc = ProcessContext pth m l o f nodes in
-                      do s <- get
-                         toUserState (pc s) (process nodes)
+mk :: Monad m => Options -> Overrides -> [Node] -> Template s m
+mk options o =
+  let
+    f nodes =
+      Template $
+        \pth m l ->
+          if optJson options then
+            let
+              m' =
+                m <> subs [("field", useAttrs (a "value") textFill)]
+            in do
+            s <- get
+
+            txts <-
+              toUserState (ProcessContext pth m' l o f nodes s) (process options nodes)
+
+            case T.intercalate "," txts of
+              txt | T.isPrefixOf "[" txt -> return [txt]
+              txt                        -> return ["{" <> txt <> "}"]
+
+          else do
+            s <- get
+            toUserState (ProcessContext pth m l o f nodes s) (process options nodes)
+  in
+  f
+
 
 toProcessState :: Monad m => StateT s m a -> StateT (ProcessContext s m) m a
 toProcessState f =
@@ -154,41 +186,50 @@ add :: Monad m => Substitutions s m -> Template s m -> Template s m
 add mouter tpl =
   Template (\pth minner l -> runTemplate tpl pth (minner `M.union` mouter) l)
 
-process :: Monad m => [Node] -> ProcessT s m
-process [] = return []
-process (NodeElement (BindElement atr kids):nextNodes) = do
+process :: Monad m => Options -> [Node] -> ProcessT s m
+process _ [] = return []
+process _ (NodeElement (BindElement atr kids):nextNodes) = do
   pcNodes .= nextNodes
   processBind atr kids
-process (currentNode:nextNodes) = do
+process options (currentNode:nextNodes) = do
   pcNodes .= nextNodes
   processedNode <-
-    case currentNode of
-      NodeElement DoctypeElement  -> return ["<!DOCTYPE html>"]
-      NodeElement (ApplyElement atr kids) ->
+    if optJson options then
+      case currentNode of
+        NodeElement (BlankElement (Name _ name) atr kids) ->
+          processJson name atr kids
+        _ ->
+          return []
+    else
+      case currentNode of
+        NodeElement DoctypeElement  ->
+          return ["<!DOCTYPE html>"]
+        NodeElement (ApplyElement atr kids) ->
           processApply atr kids
-      NodeElement (PlainElement tn atr kids) ->
-          processPlain tn atr kids
-      NodeElement (BlankElement (Name _ name) atr kids) ->
+        NodeElement (PlainElement tn atr kids) ->
+          processPlain options tn atr kids
+        NodeElement (BlankElement (Name _ name) atr kids) ->
           processBlank name atr kids
-      NodeContent t ->
+        NodeContent t ->
           return [t]
-      NodeComment c ->
+        NodeComment c ->
           return ["<!--" <> c <> "-->"]
 
-  restOfNodes <- process nextNodes
+  restOfNodes <- process options nextNodes
   return $ processedNode ++ restOfNodes
 
 -- Add the open tag and attributes, process the children, then close
 -- the tag.
 processPlain :: Monad m =>
+                Options ->
                 Name ->
                 Attributes ->
                 [Node] ->
                 ProcessT s m
-processPlain tagName atr kids = do
+processPlain options tagName atr kids = do
   pc <- get
   atrs <- attrsToText atr
-  processed <- process kids
+  processed <- process options kids
   return $ tagToText (_pcOverrides pc) tagName atrs processed
 
 selfClosing :: Overrides -> HS.HashSet Text
@@ -236,7 +277,7 @@ fillAttr eBlankText = do
   ProcessContext pth m l _ mko _ _ <- get
   case eBlankText of
     Right hole@(Blank txt) | T.isInfixOf "?" txt || T.isInfixOf "->" txt ->
-      fmap mconcat $ process $ attrPath hole
+      fmap mconcat $ process defaultOptions $ attrPath hole
 
     Right hole ->
       fmap T.concat $ toProcessState $ unFill (fillIn hole m) mempty (pth, mko []) l
@@ -247,6 +288,53 @@ fillAttr eBlankText = do
 -- Look up the Fill for the hole.  Apply the Fill to a map of
 -- attributes, a Template made from the child nodes (adding in the
 -- outer substitution) and the library.
+processJson :: Monad m =>
+               Text ->
+               Attributes ->
+               [Node] ->
+               ProcessT s m
+processJson tagName atr kids = do
+  (ProcessContext pth m l _ mko _ _) <- get
+  filled <- fillAttrs atr
+
+  txts <- toProcessState $ unFill (fillIn (Blank tagName) m) filled (pth, add m (mko kids)) l
+  let name = fromMaybe tagName (M.lookup "name" filled)
+
+  case txts of
+    [txt] | M.member "skip" atr && T.isInfixOf "\":" txt ->
+      return [T.drop 1 $ T.dropEnd 1 txt]
+
+    [txt] | T.isInfixOf "\":" txt ->
+      return ["\"" <> name <> "\":" <> txt]
+
+    [txt] | M.member "number" atr ->
+      return ["\"" <> name <> "\":" <> txt]
+
+    [txt] | M.member "bool" atr ->
+      return $
+        case T.toLower txt of
+          "true"  -> ["\"" <> name <> "\":true"]
+          "t"     -> ["\"" <> name <> "\":true"]
+          "false" -> ["\"" <> name <> "\":false"]
+          "f"     -> ["\"" <> name <> "\":false"]
+          _       -> ["\"" <> name <> "\":\"" <> txt <> "\""]
+
+    [txt] ->
+      return ["\"" <> name <> "\":\"" <> txt <> "\""]
+
+    _ | M.member "skip" atr ->
+      return ["[" <> (T.intercalate "," txts) <> "]"]
+
+    _ ->
+      return
+        [ "[" <>
+            ( T.intercalate ","
+              $ fmap (\txt -> "{\"" <> name <> "\":" <> txt <> "}")
+              $ txts
+            ) <>
+          "]"
+        ]
+
 processBlank :: Monad m =>
                 Text ->
                 Attributes ->
@@ -267,7 +355,7 @@ processBind atr kids = do
       newSubs = subs [(tagName, Fill $ \_a _t _l ->
                                        runTemplate (mko kids) pth m l)]
   pcSubs .= newSubs `M.union` m
-  process nodes
+  process defaultOptions nodes
 
 -- Look up the template that's supposed to be applied in the library,
 -- create a substitution for the content hole using the child elements
@@ -369,3 +457,18 @@ attrPath (Blank txt) =
           []
   in
   foldr attrNode [] $ T.splitOn "->" txt
+
+
+data Options =
+  Options
+    { optJson  :: Bool
+    , minified :: Bool
+    }
+
+
+defaultOptions :: Options
+defaultOptions =
+  Options
+    { optJson  = False
+    , minified = False
+    }

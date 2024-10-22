@@ -125,16 +125,16 @@ mapSubs :: Monad m
         => (a -> Substitutions s m)
         -> [a]
         -> Fill s m
-mapSubs f xs = Fill $ \_attrs (pth, tpl) lib ->
-    -- (pure . T.concat . concat)
-    concat  <$>  mapM (\n -> runTemplate tpl pth (f n) lib) xs
+mapSubs f xs = Fill $ \_attrs (pth, tpl) lib -> do
+  ls <- mapM (\n -> runTemplate tpl pth (f n) lib) xs
+  return $ fmap T.concat ls
 
 -- | Create substitutions for each element in a list (using IO/state if
 -- needed) and fill the child nodes with those substitutions.
 mapSubs' :: Monad m => (a -> StateT s m (Substitutions s m)) -> [a] -> Fill s m
 mapSubs' f xs = Fill $
   \_m (pth, tpl) lib ->
-    mconcat <$> mapM (\x -> do
+    concat <$> mapM (\x -> do
                            s' <- f x
                            runTemplate tpl pth s' lib) xs
 
@@ -226,7 +226,7 @@ useAttrs :: Monad m
          => (Attributes -> k -> Fill s m)
          ->  k
          ->  Fill s m
-useAttrs k fill= Fill $ \atrs (pth, tpl) lib ->
+useAttrs k fill = Fill $ \atrs (pth, tpl) lib ->
   unFill (k atrs fill) atrs (pth, tpl) lib
 
 -- | Prepend `a` to the name of an attribute to pass the value of that

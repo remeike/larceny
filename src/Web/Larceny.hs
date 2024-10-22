@@ -81,7 +81,8 @@ module Web.Larceny ( Blank(..)
                    , a
                    , (%)
                    , parse
-                   , parseWithOverrides) where
+                   , parseWithOverrides
+                   , parseJSON) where
 
 import           Control.Monad        (filterM)
 import           Control.Monad.State  (evalStateT)

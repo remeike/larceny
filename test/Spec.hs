@@ -119,10 +119,24 @@ renderM templateText = do
   let tpl = parseWithOverrides o (LT.fromStrict templateText)
   liftIO $ fmap T.concat $ evalStateT (runTemplate tpl p s l) ()
 
+renderJson :: Text -> LarcenyHspecM Text
+renderJson templateText = do
+  (LarcenyHspecState _ (LarcenyState p s l o)) <- S.get
+  let tpl = parseJSON (LT.fromStrict templateText)
+  liftIO $ fmap T.concat $ evalStateT (runTemplate tpl p s l) ()
+
 shouldRenderM :: Text -> Text -> LarcenyHspecM ()
 shouldRenderM templateText output = do
   rendered <- renderM templateText
   if removeSpaces rendered == removeSpaces output
+    then setResult H.Success
+    else let msg = T.unpack $ rendered <> " doesn't match " <> output in
+         setResult (H.Failure Nothing (H.Reason msg))
+
+shouldRenderJson :: Text -> Text -> LarcenyHspecM ()
+shouldRenderJson templateText output = do
+  rendered <- renderJson templateText
+  if rendered == output
     then setResult H.Success
     else let msg = T.unpack $ rendered <> " doesn't match " <> output in
          setResult (H.Failure Nothing (H.Reason msg))
@@ -163,6 +177,91 @@ main = spec
 spec :: IO ()
 spec = hspec $ do
   withLarceny $ do
+    describe "json" $ do
+      it "should render numbers and booleans" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ( "numbers"
+              , fillChildrenWith $ subs [("one", textFill "1"), ("two", textFill "2")]
+              )
+            , ( "boolean"
+              , fillChildrenWith $ subs [("on", textFill "True"), ("off", textFill "false")]
+              )
+            ]
+
+        "<numbers><one/><two number/></numbers>"
+          `shouldRenderJson` "{\"numbers\":{\"one\":\"1\",\"two\":2}}"
+        "<boolean><on bool/><off bool/></boolean>"
+          `shouldRenderJson` "{\"boolean\":{\"on\":true,\"off\":false}}"
+
+      it "should render custom field" $ do
+        "<field name='hello' value='dolly'/><field name='hey' value='world'/>"
+          `shouldRenderJson` "{\"hello\":\"dolly\",\"hey\":\"world\"}"
+
+      it "should override field name" $ do
+        hLarcenyState.lSubs .= subs [("mr", textFill "Magoo")]
+        "<mr/>" `shouldRenderJson` "{\"mr\":\"Magoo\"}"
+        "<mr name='mister'/>" `shouldRenderJson` "{\"mister\":\"Magoo\"}"
+
+      it "should render arrays" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ( "member"
+              , mapSubs
+                  ( \(name, n) ->
+                      subs
+                        [ ("name", textFill name)
+                        , ("number", textFill (T.pack $ show n))
+                        ]
+                  )
+                  [ ("Bonnie Thunders", 1)
+                  , ("Donna Matrix", 2)
+                  , ("Beyonslay", 3 :: Int)
+                  ]
+              )
+            ]
+        "<member><name/><number number/></member>"
+          `shouldRenderJson`
+            "[{\"member\":{\"name\":\"Bonnie Thunders\",\"number\":1}},\
+             \{\"member\":{\"name\":\"Donna Matrix\",\"number\":2}},\
+             \{\"member\":{\"name\":\"Beyonslay\",\"number\":3}}]"
+
+      it "should render nested objects and skip specified fields" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ( "hello"
+              , fillChildrenWith $
+                  subs
+                    [ ( "cat"
+                      , fillChildrenWith $
+                          subs [("name", textFill "Jasper"), ("sound", textFill "Meow")]
+                      )
+                    , ( "dog"
+                      , fillChildrenWith $
+                          subs [("name", textFill "Max"), ("sound", textFill "Woof")]
+                      )
+                    ]
+              )
+            ]
+        "<hello><dog><name/><sound/></dog><cat><name/><sound/></cat></hello>"
+          `shouldRenderJson`
+            "{\"hello\":{\
+             \\"dog\":{\"name\":\"Max\",\"sound\":\"Woof\"},\
+             \\"cat\":{\"name\":\"Jasper\",\"sound\":\"Meow\"}\
+            \}}"
+
+        "<hello skip><dog><name/><sound/></dog><cat><name/><sound/></cat></hello>"
+          `shouldRenderJson`
+            "{\"dog\":{\"name\":\"Max\",\"sound\":\"Woof\"},\
+             \\"cat\":{\"name\":\"Jasper\",\"sound\":\"Meow\"}\
+            \}"
+
+        "<hello skip><dog skip><name/><sound/></dog><cat><name/><sound/></cat></hello>"
+          `shouldRenderJson`
+            "{\"name\":\"Max\",\"sound\":\"Woof\",\
+             \\"cat\":{\"name\":\"Jasper\",\"sound\":\"Meow\"}\
+            \}"
+
     describe "parse" $ do
       it "should parse HTML into a Template" $ do
         hLarcenyState.lSubs .= subst
