@@ -1,31 +1,36 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Web.Larceny.Fills ( textFill
-                         , textFill'
-                         , rawTextFill
-                         , rawTextFill'
-                         , mapSubs
-                         , mapSubs'
-                         , fillChildren
-                         , fillChildrenWith
-                         , fillChildrenWith'
-                         , maybeFillChildrenWith
-                         , maybeFillChildrenWith'
-                         , ifFill
-                         , useAttrs
-                         , a
-                         , (%)) where
+module Web.Larceny.Fills
+  ( textFill
+  , textFill'
+  , rawTextFill
+  , rawTextFill'
+  , outputFill
+  , outputFill'
+  , mapSubs
+  , mapSubs'
+  , fillChildren
+  , fillChildrenWith
+  , fillChildrenWith'
+  , maybeFillChildrenWith
+  , maybeFillChildrenWith'
+  , ifFill
+  , useAttrs
+  , a
+  , (%)
+  ) where
 
+--------------------------------------------------------------------------------
 import           Control.Exception
-import           Control.Monad.State (StateT)
+import           Control.Monad.State  ( StateT )
 import qualified Data.Map            as M
-import           Data.Maybe          (fromMaybe)
-import           Data.Text           (Text)
+import           Data.Maybe           ( fromMaybe )
+import           Data.Text            ( Text )
 import qualified Data.Text           as T
 import qualified HTMLEntities.Text   as HE
-------------
+--------------------------------------------------------------------------------
 import           Web.Larceny.Types
-
+--------------------------------------------------------------------------------
 
 -- | A conditional fill.
 --
@@ -93,6 +98,10 @@ textFill t = textFill' (return t)
 rawTextFill :: Monad m => Text -> Fill s m
 rawTextFill t = rawTextFill' (return t)
 
+-- | TODO
+outputFill :: Monad m => Output -> Fill s m
+outputFill t = outputFill' (return t)
+
 -- | Use state or IO, then fill in some text.
 --
 -- @
@@ -100,7 +109,7 @@ rawTextFill t = rawTextFill' (return t)
 -- textFill' getTextFromDatabase
 -- @
 textFill' :: Monad m => StateT s m Text -> Fill s m
-textFill' t = Fill $ \_m _t _l -> HE.text <$> t
+textFill' t = Fill $ \_m _t _l -> TextOutput . HE.text <$> t
 
 -- | Use state or IO, then fill in some text.
 --
@@ -109,7 +118,11 @@ textFill' t = Fill $ \_m _t _l -> HE.text <$> t
 -- textFill' getTextFromDatabase
 -- @
 rawTextFill' :: Monad m => StateT s m Text -> Fill s m
-rawTextFill' t = Fill $ \_m _t _l -> t
+rawTextFill' t = Fill $ \_m _t _l -> fmap TextOutput t
+
+-- | TODO
+outputFill' :: Monad m => StateT s m Output -> Fill s m
+outputFill' t = Fill $ \_m _t _l -> t
 
 -- | Create substitutions for each element in a list and fill the child nodes
 -- with those substitutions.
@@ -126,14 +139,14 @@ mapSubs :: Monad m
         -> [a]
         -> Fill s m
 mapSubs f xs = Fill $ \_attrs (pth, tpl) lib ->
-    T.concat <$>  mapM (\n -> runTemplate tpl pth (f n) lib) xs
+  ListOutput <$> mapM (\n -> runTemplate tpl pth (f n) lib) xs
 
 -- | Create substitutions for each element in a list (using IO/state if
 -- needed) and fill the child nodes with those substitutions.
 mapSubs' :: Monad m => (a -> StateT s m (Substitutions s m)) -> [a] -> Fill s m
 mapSubs' f xs = Fill $
   \_m (pth, tpl) lib ->
-    T.concat <$>  mapM (\x -> do
+    ListOutput <$> mapM (\x -> do
                            s' <- f x
                            runTemplate tpl pth s' lib) xs
 
@@ -202,7 +215,7 @@ maybeFillChildrenWith' :: Monad m => StateT s m (Maybe (Substitutions s m)) -> F
 maybeFillChildrenWith' sMSubs = Fill $ \_s (pth, Template tpl) l -> do
   mSubs <- sMSubs
   case mSubs of
-    Nothing -> return ""
+    Nothing -> return $ TextOutput ""
     Just s  -> tpl pth s l
 
 -- | Use attributes from the the blank as arguments to the fill.

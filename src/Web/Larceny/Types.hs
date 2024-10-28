@@ -18,16 +18,20 @@ module Web.Larceny.Types
   , ApplyError(..)
   , Settings(..)
   , defaultSettings
+  , Output(..)
   ) where
 
+--------------------------------------------------------------------------------
 import           Control.Exception
-import           Control.Monad.State (StateT)
-import           Data.Hashable       (Hashable, hash, hashWithSalt)
-import           Data.Map            (Map)
+import           Control.Monad.State  ( StateT )
+import           Data.Hashable        ( Hashable, hash, hashWithSalt )
+import           Data.Map             ( Map )
 import qualified Data.Map            as M
-import           Data.Text           (Text)
+import           Data.Text            ( Text )
 import qualified Data.Text           as T
-import           Text.Read           (readMaybe)
+import           Text.Read            ( readMaybe )
+--------------------------------------------------------------------------------
+
 
 -- | Corresponds to a "blank" in the template that can be filled in
 -- with some value when the template is rendered.  Blanks can be tags
@@ -42,6 +46,7 @@ import           Text.Read           (readMaybe)
 -- \<a href="teams\/${team}\/{$number}"> \<- both "team" and number"
 -- @
 data Blank = Blank Text | FallbackBlank  deriving (Eq, Show, Ord)
+
 
 instance Hashable Blank where
   hashWithSalt s (Blank tn) = s + hash tn
@@ -73,7 +78,7 @@ instance Hashable Blank where
 newtype Fill s m = Fill { unFill :: Attributes
                                -> (Path, Template s m)
                                -> Library s m
-                               -> StateT s m Text }
+                               -> StateT s m Output }
 
 -- | The Blank's attributes, a map from the attribute name to
 -- it's value.
@@ -122,7 +127,7 @@ fallbackSub fill = M.fromList [(FallbackBlank, fill)]
 newtype Template s m = Template { runTemplate :: Path
                                               -> Substitutions s m
                                               -> Library s m
-                                              -> StateT s m Text }
+                                              -> StateT s m Output }
 
 -- | The path to a template.
 type Path = [Text]
@@ -235,4 +240,12 @@ defaultSettings =
     }
 
 
-{-# ANN module ("HLint: ignore Use first" :: String) #-}
+data Output
+  = LeafOutput Text Attributes
+  | ElemOutput Text Attributes [Output]
+  | TextOutput Text
+  | ListOutput [Output]
+  | RawTextOutput Text
+  | CommentOutput Text
+  | HtmlDocType
+  deriving (Eq, Show)

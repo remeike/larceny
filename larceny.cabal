@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                larceny
-version:             0.3.3
+version:             0.3.4
 -- synopsis:
 -- description:
 homepage:            http://www.github.com/positiondev/larceny
@@ -21,6 +21,7 @@ library
                      , Web.Larceny.Html
                      , Web.Larceny.Svg
                      , Web.Larceny.Internal
+                     , Web.Larceny.Output
                      , Web.Larceny.Types
                      , Web.Larceny.Fills
   other-extensions:    OverloadedStrings
@@ -39,6 +40,7 @@ library
                      , html-entities
                      , microlens
                      , logging
+                     , blaze-markup
   hs-source-dirs:      src
   default-language:    Haskell2010
 
@@ -51,6 +53,7 @@ test-suite test
                        Web.Larceny.Html
                        Web.Larceny.Svg
                        Web.Larceny.Internal
+                       Web.Larceny.Output
                        Web.Larceny.Types
                        Web.Larceny.Fills
   other-extensions:    OverloadedStrings
@@ -72,6 +75,7 @@ test-suite test
                      , hashable
                      , html-entities
                      , logging
+                     , blaze-markup
                      , larceny
   hs-source-dirs:      test, src
   default-language:    Haskell2010

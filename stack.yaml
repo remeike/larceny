@@ -3,4 +3,4 @@ packages:
 - '.'
 extra-deps:
 - logging-3.0.5
-resolver: lts-12.26
+resolver: lts-22.37

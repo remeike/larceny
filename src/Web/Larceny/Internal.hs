@@ -26,6 +26,7 @@ import qualified Data.Text.Lazy      as LT
 import qualified Text.HTML.DOM       as D
 import qualified Text.XML            as X
 --------------------------------------------------------------------------------
+import           Web.Larceny.Output   ( toMarkup, toText )
 import           Web.Larceny.Types
 import           Web.Larceny.Fills
 import           Web.Larceny.Html     ( html5Nodes, html5SelfClosingNodes )
@@ -172,7 +173,10 @@ mk settings =
               ProcessContext pth m l (setOverrides settings) f nodes
           in do
           s <- get
-          T.concat <$> toUserState (pc s) (process settings nodes)
+          ls <- toUserState (pc s) (process settings nodes)
+          case ls of
+            [l] -> return l
+            _   -> return $ ListOutput ls
   in
   f
 
@@ -264,7 +268,7 @@ pcState = lens _pcState (\pc s -> pc { _pcState = s })
 
 
 type ProcessT s m =
-  StateT (ProcessContext s m) m [Text]
+  StateT (ProcessContext s m) m [Output]
 
 
 add :: Monad m => Substitutions s m -> Template s m -> Template s m
@@ -288,7 +292,7 @@ process settings nodes =
       processedNode <-
         case currentNode of
           NodeElement DoctypeElement  ->
-            return ["<!DOCTYPE html>"]
+            return [HtmlDocType]
 
           NodeElement (ApplyElement atr kids) ->
             processApply settings atr kids
@@ -300,10 +304,10 @@ process settings nodes =
             processBlank settings name atr kids
 
           NodeContent t ->
-            return [t]
+            return [TextOutput t]
 
           NodeComment c ->
-            return ["<!--" <> c <> "-->"]
+            return [CommentOutput c]
 
       restOfNodes <- process settings nextNodes
       return $ processedNode <> restOfNodes
@@ -315,9 +319,9 @@ processPlain ::
   Monad m => Settings m -> Name -> Attributes -> [Node] -> ProcessT s m
 processPlain settings tagName atr kids = do
   pc <- get
-  atrs <- attrsToText settings atr
+  atrs <- processAttrs settings atr
   processed <- process settings kids
-  return $ tagToText (_pcOverrides pc) tagName atrs processed
+  return $ elemOutput (_pcOverrides pc) tagName atrs processed
 
 
 selfClosing :: Overrides -> HS.HashSet Text
@@ -325,39 +329,35 @@ selfClosing (Overrides _ _ sc) =
   HS.fromList sc <> html5SelfClosingNodes
 
 
-tagToText :: Overrides -> Name -> Text -> [Text] -> [Text]
-tagToText overrides (Name mPf name) atrs processed =
+elemOutput :: Overrides -> Name -> Attributes -> [Output] -> [Output]
+elemOutput overrides (Name mPf name) atrs processed =
   let
     prefix =
       fromMaybe "" ((\pf -> pf <> ":") <$> mPf)
   in
   if name `HS.member` selfClosing overrides
-    then
-      ["<" <> prefix <> name <> atrs <> "/>"]
-    else
-      ["<" <> prefix <> name <> atrs <> ">"]
-        ++ processed
-        ++ ["</" <> prefix <> name <> ">"]
+    then [LeafOutput (prefix <> name) atrs ]
+    else [ElemOutput (prefix <> name) atrs processed]
 
 
-attrsToText ::
-  Monad m => Settings m -> Attributes -> StateT (ProcessContext s m) m Text
-attrsToText settings attrs =
-  T.concat <$> mapM attrToText (M.toList attrs)
-  where attrToText (k,v) = do
-          let (unboundK, unboundV) =  eUnboundAttrs (k,v)
-          keys <- T.concat <$> mapM (fillAttr settings) unboundK
-          vals <- T.concat <$> mapM (fillAttr settings) unboundV
-          return $ toText (keys, vals)
-        toText (k, "") = " " <> k
-        toText (k, v) =
-          if T.any (=='\"') v then
-            " " <> k <> "=\'" <> T.strip v <> "\'"
-          else
-            " " <> k <> "=\"" <> T.strip v <> "\""
+processAttrs ::
+  Monad m => Settings m -> Attributes -> StateT (ProcessContext s m) m Attributes
+processAttrs settings attrs =
+  let
+    attrToText (k,v) =
+      let
+        (unboundK, unboundV) =  eUnboundAttrs (k,v)
+      in do
+      keys <- T.concat <$> mapM (fillAttr settings) unboundK
+      vals <- T.concat <$> mapM (fillAttr settings) unboundV
+      return [(keys, vals)]
+  in
+  M.fromList . mconcat <$> mapM attrToText (M.toList attrs)
+
 
 fillAttrs ::
-  Monad m => Settings m -> Attributes -> StateT (ProcessContext s m) m Attributes
+  Monad m =>
+  Settings m -> Attributes -> StateT (ProcessContext s m) m Attributes
 fillAttrs settings attrs =
   let
     fill p = do
@@ -370,19 +370,26 @@ fillAttrs settings attrs =
 
 
 fillAttr ::
-  Monad m => Settings m -> Either Text Blank -> StateT (ProcessContext s m) m Text
+  Monad m =>
+  Settings m -> Either Text Blank -> StateT (ProcessContext s m) m Text
 fillAttr settings eBlankText = do
   ProcessContext pth m l _ mko _ _ <- get
 
   case eBlankText of
-    Right hole@(Blank txt) | T.isInfixOf "?" txt || T.isInfixOf "->" txt ->
-      fmap mconcat $ process settings $ attrPath hole
+    Right hole@(Blank txt) | T.isInfixOf "?" txt || T.isInfixOf "->" txt -> do
+      ls <- process settings $ attrPath hole
+      return $ T.concat $ fmap toText ls
 
     Right hole ->
-      toProcessState $ unFill (fillIn settings hole m) mempty (pth, mko []) l
+      fmap toText
+        $ toProcessState
+        $ unFill (fillIn settings hole m) mempty (pth, mko []) l
 
     Left text ->
-      toProcessState $ return text
+      fmap toText
+        $ toProcessState
+        $ return
+        $ TextOutput text
 
 
 -- Look up the Fill for the hole.  Apply the Fill to a map of
@@ -393,9 +400,11 @@ processBlank ::
 processBlank settings tagName atr kids = do
   (ProcessContext pth m l _ mko _ _) <- get
   filled <- fillAttrs settings atr
-  sequence [ toProcessState $ unFill (fillIn settings (Blank tagName) m)
-                    filled
-                    (pth, add m (mko kids)) l]
+  sequence
+    [ toProcessState $
+        unFill (fillIn settings (Blank tagName) m) filled (pth, add m (mko kids)) l
+    ]
+
 
 processBind ::
   Monad m => Settings m ->  Attributes -> [Node] -> ProcessT s m
@@ -427,14 +436,19 @@ processApply settings atr kids = do
   filledAttrs <- fillAttrs settings atr
   let (absolutePath, tplToApply) = findTemplateFromAttrs pth l filledAttrs
   contentTpl <- toProcessState $ runTemplate (mko kids) pth m l
-  let contentSub = subs [("apply-content", rawTextFill contentTpl)]
+  let contentSub = subs [("apply-content", outputFill contentTpl)]
   sequence [ toProcessState $ runTemplate tplToApply absolutePath (contentSub `M.union` m) l ]
+
 
 findTemplateFromAttrs ::
   Monad m => Path -> Library s m -> Attributes -> (Path, Template s m)
 findTemplateFromAttrs pth l atr =
-  let tplPath = T.splitOn "/" $ fromMaybe (throw $ AttrMissing "template")
-                                          (M.lookup "template" atr) in
+  let
+    tplPath =
+      T.splitOn "/"
+        $ fromMaybe (throw $ AttrMissing "template")
+        $ M.lookup "template" atr
+  in
   case findTemplate l (init pth) tplPath of
     (_, Nothing) -> throw $ ApplyError tplPath pth
     (targetPath, Just tpl) -> (targetPath, tpl)
@@ -460,9 +474,6 @@ eUnboundAttrs (name, value) = do
           _ -> [Left w]
   ( concatMap mWord (possibleWords name)
     , concatMap mWord (possibleWords value))
-
-{-# ANN module ("HLint: ignore Redundant lambda" :: String) #-}
-{-# ANN module ("HLint: ignore Use first" :: String) #-}
 
 
 attrNodes :: Blank -> [Node]
@@ -512,7 +523,6 @@ attrPath (Blank txt) =
           []
   in
   foldr attrNode [] $ T.splitOn "->" txt
-
 
 
 trimWhitespace :: LT.Text -> LT.Text
