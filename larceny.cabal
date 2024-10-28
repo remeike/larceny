@@ -59,6 +59,7 @@ test-suite test
                      , text >=1.2
                      , hspec >=2.2
                      , hspec-core >=2.2
+                     , hspec-expectations
                      , unordered-containers
                      , directory >= 1.2.5
                      , filepath

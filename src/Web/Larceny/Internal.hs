@@ -14,6 +14,7 @@ import           Control.Monad.Trans  ( lift )
 import           Control.Monad.State  ( MonadState, StateT, evalStateT
                                       , runStateT, get, modify, put
                                       )
+import qualified Data.Char           as Char
 import qualified Data.HashSet        as HS
 import qualified Data.List           as List
 import qualified Data.Map            as M
@@ -42,7 +43,8 @@ parseWithSettings :: Monad m => Settings m -> LT.Text -> Template s m
 parseWithSettings settings t =
   let
     textWithoutDoctype =
-      LT.replace "<!DOCTYPE html>" "<doctype />" t
+      LT.replace "<!DOCTYPE html>" "<doctype />"
+        $ if setTrimWhitespace settings then trimWhitespace t else t
 
     (X.Document _ (X.Element _ _ nodes) _) =
       D.parseLT ("<div>" <> textWithoutDoctype <> "</div>")
@@ -510,3 +512,34 @@ attrPath (Blank txt) =
           []
   in
   foldr attrNode [] $ T.splitOn "->" txt
+
+
+
+trimWhitespace :: LT.Text -> LT.Text
+trimWhitespace txt =
+  snd $
+    List.foldl'
+      ( \(prev, acc) t ->
+        case LT.strip t of
+            t' | LT.isPrefixOf "<" t'   -> (t', acc <> trimInnerWhitespace t')
+            t' | LT.isSuffixOf ">" prev -> (t', acc <> trimInnerWhitespace t')
+            t'                         ->  (t', acc <> " " <> trimInnerWhitespace t')
+      )
+      ("", "")
+      (LT.lines txt)
+
+
+
+trimInnerWhitespace :: LT.Text -> LT.Text
+trimInnerWhitespace txt =
+  snd $
+    LT.foldr
+      ( \char (whitespace, acc) ->
+          if Char.isSpace char && whitespace then
+            (True, acc)
+          else
+            (Char.isSpace char, LT.cons char acc)
+
+      )
+      (False, "")
+      txt

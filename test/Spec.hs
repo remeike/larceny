@@ -25,6 +25,7 @@ import           Data.Typeable
 import           Examples
 import           Test.Hspec
 import qualified Test.Hspec.Core.Spec    as H
+import qualified Test.Hspec.Expectations as H
 import           Web.Larceny
 
 infix  4 .=
@@ -177,6 +178,36 @@ main = spec
 spec :: IO ()
 spec = hspec $ do
   withLarceny $ do
+    describe "white space" $ do
+      it "should remove spaces next to line breaks" $ do
+        txt1 <-
+          renderM
+            "  <p>              \
+            \\n    Hello,       \
+            \\n    Dolly.       \
+            \\n    Hello, World \
+            \\n</p>             "
+
+        txt2 <-
+          renderM
+            "  <p>Hello,        \
+            \\n    Dolly.       \
+            \\n    Hello, World \
+            \\n</p>             "
+
+        liftIO $ txt1 `shouldBe` "<p>Hello, Dolly. Hello, World</p>"
+        liftIO $ txt1 `shouldBe` txt2
+
+      it "should reduce white space on lines to just one space" $ do
+        txt <-
+          renderM
+            "   <p>   Hello,  Dolly.    Hi!!!   </p> \
+            \\n <p>                                  \
+            \\n    Hello,        World.    Hey!      \
+            \\n</p>                                  "
+
+        liftIO $ txt `shouldBe` "<p> Hello, Dolly. Hi!!! </p><p>Hello, World. Hey!</p>"
+
     describe "parse" $ do
       it "should parse HTML into a Template" $ do
         hLarcenyState.lSubs .= subst

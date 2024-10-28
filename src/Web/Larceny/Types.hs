@@ -216,6 +216,7 @@ data Settings m =
     , setIgnoreComments :: Bool
     , setIgnoreContent  :: Bool
     , setIgnoreHtml     :: Bool
+    , setTrimWhitespace :: Bool
     , setDebugLogger    :: Text -> m ()
     , setDebugComments  :: Bool
     }
@@ -228,6 +229,7 @@ defaultSettings =
     , setIgnoreComments = False
     , setIgnoreContent  = False
     , setIgnoreHtml     = False
+    , setTrimWhitespace = True
     , setDebugLogger    = \_ -> return ()
     , setDebugComments  = False
     }
