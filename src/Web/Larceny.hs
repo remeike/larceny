@@ -81,7 +81,10 @@ module Web.Larceny ( Blank(..)
                    , a
                    , (%)
                    , parse
-                   , parseWithOverrides) where
+                   , parseWithSettings
+                   , Settings(..)
+                   , defaultSettings
+                   ) where
 
 import           Control.Monad        (filterM)
 import           Control.Monad.State  (evalStateT)
@@ -134,13 +137,13 @@ renderRelative l sub s givenPath targetPath =
     (_, Nothing) -> return Nothing
 
 -- | Load all the templates in some directory into a Library.
-loadTemplates :: Monad m => FilePath -> Overrides -> IO (Library s m)
-loadTemplates path overrides =
+loadTemplates :: Monad m => FilePath -> Settings m -> IO (Library s m)
+loadTemplates path settings =
   do tpls <- getAllTemplates path
      M.fromList <$>
        mapM (\file -> do content <- ST.readFile (path <> "/" <> file)
                          return (mkPath file,
-                                 parseWithOverrides overrides (LT.fromStrict content)))
+                                 parseWithSettings settings (LT.fromStrict content)))
                          tpls
   where mkPath p = T.splitOn "/" $ T.pack $ dropExtension p
 

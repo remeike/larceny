@@ -1,20 +1,24 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Web.Larceny.Types ( Blank(..)
-                         , Fill(..)
-                         , Attributes
-                         , Name(..)
-                         , Substitutions
-                         , subs
-                         , fallbackSub
-                         , Template(..)
-                         , Path
-                         , Library
-                         , Overrides(..)
-                         , defaultOverrides
-                         , FromAttribute(..)
-                         , AttrError(..)
-                         , ApplyError(..)) where
+module Web.Larceny.Types
+  ( Blank(..)
+  , Fill(..)
+  , Attributes
+  , Name(..)
+  , Substitutions
+  , subs
+  , fallbackSub
+  , Template(..)
+  , Path
+  , Library
+  , Overrides(..)
+  , defaultOverrides
+  , FromAttribute(..)
+  , AttrError(..)
+  , ApplyError(..)
+  , Settings(..)
+  , defaultSettings
+  ) where
 
 import           Control.Exception
 import           Control.Monad.State (StateT)
@@ -175,21 +179,58 @@ instance Show AttrError where
 class FromAttribute a where
   fromAttribute :: Maybe Text -> Either (Text -> AttrError) a
 
+
 instance FromAttribute Text where
   fromAttribute = maybe (Left AttrMissing) Right
+
+
 instance FromAttribute Int where
   fromAttribute (Just attr) = maybe (Left $ AttrUnparsable "Int") Right $ readMaybe $ T.unpack attr
   fromAttribute Nothing = Left AttrMissing
+
+
 instance FromAttribute a => FromAttribute (Maybe a) where
   fromAttribute = traverse $ fromAttribute . Just
+
+
 instance FromAttribute Bool where
   fromAttribute (Just attr) = maybe (Left $ AttrUnparsable "Bool") Right $ readMaybe $ T.unpack attr
   fromAttribute Nothing = Left AttrMissing
 
-data ApplyError = ApplyError Path Path deriving (Eq)
+
+data ApplyError =
+  ApplyError Path Path deriving (Eq)
+
+
 instance Show ApplyError where
   show (ApplyError tplPth pth) =
     "Couldn't find " <> show tplPth <> " relative to " <> show pth <> "."
+
+
 instance Exception ApplyError
+
+
+data Settings m =
+  Settings
+    { setOverrides      :: Overrides
+    , setIgnoreComments :: Bool
+    , setIgnoreContent  :: Bool
+    , setIgnoreHtml     :: Bool
+    , setDebugLogger    :: Text -> m ()
+    , setDebugComments  :: Bool
+    }
+
+
+defaultSettings :: Monad m => Settings m
+defaultSettings =
+  Settings
+    { setOverrides      = mempty
+    , setIgnoreComments = False
+    , setIgnoreContent  = False
+    , setIgnoreHtml     = False
+    , setDebugLogger    = \_ -> return ()
+    , setDebugComments  = False
+    }
+
 
 {-# ANN module ("HLint: ignore Use first" :: String) #-}

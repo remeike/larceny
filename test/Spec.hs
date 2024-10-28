@@ -36,7 +36,9 @@ data LarcenyState =
   LarcenyState { _lPath      :: [Text]
                , _lSubs      :: Substitutions () IO
                , _lLib       :: Library () IO
-               , _lOverrides :: Overrides }
+               , _lOverrides :: Overrides
+               , _lSettings  :: Settings IO
+               }
 
 lPath :: Lens' LarcenyState [Text]
 lPath = lens _lPath (\ls p -> ls { _lPath = p })
@@ -44,14 +46,26 @@ lSubs :: Lens' LarcenyState (Substitutions () IO)
 lSubs = lens _lSubs (\ls s -> ls { _lSubs = s })
 lLib :: Lens' LarcenyState (Library () IO)
 lLib = lens _lLib (\ls l -> ls { _lLib = l })
-lOverrides :: Lens' LarcenyState Overrides
-lOverrides = lens _lOverrides (\ls o -> ls { _lOverrides = o })
+lSettings :: Lens' LarcenyState (Settings IO)
+lSettings = lens _lSettings (\ls s -> ls { _lSettings = s })
 
-type LarcenyHspecM = StateT LarcenyHspecState IO
+
+lOverrides :: Overrides -> LarcenyHspecM ()
+lOverrides o = do
+  (LarcenyHspecState _ (LarcenyState _ _ _ _ settings)) <- S.get
+  hLarcenyState.lSettings .= settings { setOverrides = o }
+
+
+type LarcenyHspecM =
+  StateT LarcenyHspecState IO
+
 
 data LarcenyHspecState =
-  LarcenyHspecState { _hResult       :: H.Result
-                    , _hLarcenyState :: LarcenyState }
+  LarcenyHspecState
+    { _hResult       :: H.Result
+    , _hLarcenyState :: LarcenyState
+    }
+
 
 hResult :: Lens' LarcenyHspecState H.Result
 hResult = lens _hResult (\hs r -> hs { _hResult = r })
@@ -72,7 +86,7 @@ withLarceny :: SpecWith LarcenyHspecState
             -> Spec
 withLarceny spec' =
   let larcenyHspecState =
-        LarcenyHspecState (H.Result "" H.Success) (LarcenyState ["default"] mempty mempty mempty) in
+        LarcenyHspecState (H.Result "" H.Success) (LarcenyState ["default"] mempty mempty mempty defaultSettings) in
   afterAll return $
     before (return larcenyHspecState) spec'
 
@@ -115,8 +129,8 @@ removeSpaces = T.replace " " ""
 
 renderM :: Text -> LarcenyHspecM Text
 renderM templateText = do
-  (LarcenyHspecState _ (LarcenyState p s l o)) <- S.get
-  let tpl = parseWithOverrides o (LT.fromStrict templateText)
+  (LarcenyHspecState _ (LarcenyState p s l o settings)) <- S.get
+  let tpl = parseWithSettings settings (LT.fromStrict templateText)
   liftIO $ evalStateT (runTemplate tpl p s l) ()
 
 shouldRenderM :: Text -> Text -> LarcenyHspecM ()
@@ -291,23 +305,23 @@ spec = hspec $ do
     describe "overriding HTML tags" $ do
       it "should allow overriden Html tags" $ do
         hLarcenyState.lSubs .= subs [("div", textFill "notadivatall")]
-        hLarcenyState.lOverrides .= Overrides mempty ["div"] mempty
+        lOverrides $ Overrides mempty ["div"] mempty
         "<html><div></div></html>" `shouldRenderM` "<html>not a div at all</html>"
 
       it "should allow (nested) overriden Html tags" $ do
         hLarcenyState.lSubs .= subs [("div", textFill "notadivatall")
                                     ,("custom", fillChildrenWith mempty)]
-        hLarcenyState.lOverrides .= Overrides mempty ["div"] mempty
+        lOverrides $ Overrides mempty ["div"] mempty
         "<html><custom><div></div></custom></html>"
           `shouldRenderM` "<html>not a div at all</html>"
 
       it "should not need fills for manually added plain nodes" $ do
-        hLarcenyState.lOverrides .= Overrides ["blink"] mempty mempty
+        lOverrides $ Overrides ["blink"] mempty mempty
         "<html><blink>retro!!</blink></html>"
           `shouldRenderM` "<html><blink>retro!!</blink></html>"
 
       it "should allow custom self-closing tags" $ do
-        hLarcenyState.lOverrides .= Overrides ["blink"] mempty ["blink"]
+        lOverrides $ Overrides ["blink"] mempty ["blink"]
         "<blink />" `shouldRenderM` "<blink />"
 
     describe "bind" $ do
@@ -482,7 +496,7 @@ spec = hspec $ do
         "<br />" `shouldRenderM` "<br />"
 
     describe "quotes" $ do
-      fit "should handle single quote attributes" $ do
+      it "should handle single quote attributes" $ do
         hLarcenyState.lSubs .=
           subs [("obj", rawTextFill "{\"A\": \"B\"}")]
         "<div json='{\"A\": \"B\"}'>todo</div>"
