@@ -8,29 +8,34 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 
 
-import           Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
-import           Control.Exception       (Exception, throw, try)
+--------------------------------------------------------------------------------
+import           Control.Concurrent.MVar  ( newEmptyMVar, putMVar, takeMVar )
+import           Control.Exception        ( Exception, throw, try )
 import           Lens.Micro
-import           Control.Monad           (when)
-import           Control.Monad.State     (StateT (..), evalStateT, get, modify,
-                                          runStateT)
+import           Control.Monad            ( when)
+import           Control.Monad.State      ( StateT(..)
+                                          , evalStateT
+                                          , get
+                                          , modify
+                                          , runStateT
+                                          )
 import qualified Control.Monad.State     as S
-import           Control.Monad.Trans     (liftIO)
+import           Control.Monad.Trans      ( liftIO )
 import qualified Data.ByteString.Lazy    as LBytes
 import qualified Data.Aeson              as Aeson
 import qualified Data.Map                as M
-import           Data.Maybe              (fromMaybe)
-import           Data.Text               (Text)
+import           Data.Maybe               ( fromMaybe )
+import           Data.Text                ( Text )
 import qualified Data.Text               as T
 import qualified Data.Text.Encoding      as T
 import qualified Data.Text.Lazy          as LT
 import           Data.Typeable
-import           Examples
 import           Test.Hspec
 import qualified Test.Hspec.Core.Spec    as H
-import qualified Test.Hspec.Expectations as H
+--------------------------------------------------------------------------------
+import           Examples
 import           Web.Larceny
-
+--------------------------------------------------------------------------------
 
 
 infix  4 .=
@@ -39,12 +44,12 @@ l .= b = modify (l .~ b)
 {-# INLINE (.=) #-}
 
 data LarcenyState =
-  LarcenyState { _lPath      :: [Text]
-               , _lSubs      :: Substitutions () IO
-               , _lLib       :: Library () IO
-               , _lOverrides :: Overrides
-               , _lSettings  :: Settings IO
-               }
+  LarcenyState
+    { _lPath      :: [Text]
+    , _lSubs      :: Substitutions () IO
+    , _lLib       :: Library () IO
+    , _lSettings  :: Settings IO
+    }
 
 lPath :: Lens' LarcenyState [Text]
 lPath = lens _lPath (\ls p -> ls { _lPath = p })
@@ -58,7 +63,7 @@ lSettings = lens _lSettings (\ls s -> ls { _lSettings = s })
 
 lOverrides :: Overrides -> LarcenyHspecM ()
 lOverrides o = do
-  (LarcenyHspecState _ (LarcenyState _ _ _ _ settings)) <- S.get
+  (LarcenyHspecState _ (LarcenyState _ _ _ settings)) <- S.get
   hLarcenyState.lSettings .= settings { setOverrides = o }
 
 
@@ -92,7 +97,7 @@ withLarceny :: SpecWith LarcenyHspecState
             -> Spec
 withLarceny spec' =
   let larcenyHspecState =
-        LarcenyHspecState (H.Result "" H.Success) (LarcenyState ["default"] mempty mempty mempty defaultSettings) in
+        LarcenyHspecState (H.Result "" H.Success) (LarcenyState ["default"] mempty mempty defaultSettings) in
   afterAll return $
     before (return larcenyHspecState) spec'
 
@@ -135,13 +140,13 @@ removeSpaces = T.replace " " ""
 
 renderM :: Text -> LarcenyHspecM Text
 renderM templateText = do
-  (LarcenyHspecState _ (LarcenyState p s l o settings)) <- S.get
+  (LarcenyHspecState _ (LarcenyState p s l settings)) <- S.get
   let tpl = parseWithSettings settings (LT.fromStrict templateText)
   fmap toHtml $ liftIO $ evalStateT (runTemplate tpl p s l) ()
 
 renderJson :: Text -> LarcenyHspecM Text
 renderJson templateText = do
-  (LarcenyHspecState _ (LarcenyState p s l o settings)) <- S.get
+  (LarcenyHspecState _ (LarcenyState p s l settings)) <- S.get
   let tpl = parseWithSettings settings (LT.fromStrict templateText)
   fmap (T.decodeUtf8 . LBytes.toStrict . Aeson.encode . toJson)
     $ liftIO
@@ -271,6 +276,10 @@ spec = hspec $ do
           `shouldRenderJson` "{\"age\":26,\"employed\":false,\"name\":\"John Doe\"}"
 
         "<person-a><j:object><j:string name='${name}'/><j:object pet><cat><j:string name='${name}'/><j:string age='${age}'/></cat></j:object></j:object></person-a>"
+          `shouldRenderJson` "{\"name\":\"Jane Doe\",\"pet\":{\"age\":\"7\",\"name\":\"Fluffer\"}}"
+
+      it "should render object with embeded json" $ do
+        "<j:object><j:string name='Jane Doe'/><j:object pet='{\"age\":\"7\",\"name\":\"Fluffer\"}'/></j:object>"
           `shouldRenderJson` "{\"name\":\"Jane Doe\",\"pet\":{\"age\":\"7\",\"name\":\"Fluffer\"}}"
 
       it "should render arrays" $ do

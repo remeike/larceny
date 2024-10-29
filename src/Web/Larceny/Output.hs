@@ -14,17 +14,18 @@ module Web.Larceny.Output
 import           Data.Aeson
 import qualified Data.Aeson               as Aeson
 import qualified Data.Aeson.Key           as Key
-import           Data.Aeson.Types          ( Pair, Value )
+import           Data.Aeson.Types          ( Pair )
 import           Data.Maybe                ( fromMaybe, listToMaybe )
 import qualified Data.Map                 as M
 import           Data.Scientific           ( Scientific )
 import           Data.Text                 ( Text )
 import qualified Data.Text                as T
 import qualified Data.Text.Lazy           as LT
-import           Text.Blaze                ( Markup )
+import           Text.Blaze                ( Markup, (!) )
 import qualified Text.Blaze               as Blaze
-import           Text.Blaze.Internal
+import           Text.Blaze.Internal       ( customLeaf, customParent )
 import qualified Text.Blaze.Renderer.Text as Blaze
+import qualified Text.HTML.DOM            as Html
 import           Text.XML
 import qualified Text.XML                 as Xml
 --------------------------------------------------------------------------------
@@ -50,14 +51,14 @@ toMarkup output =
   case output of
     LeafOutput name attrs ->
       foldr
-        ( \(k,v) node -> node ! customAttribute (textTag k) (textValue v))
-        ( customLeaf (textTag name) True )
+        ( \(k,v) node -> node ! Blaze.customAttribute (Blaze.textTag k) (Blaze.textValue v))
+        ( customLeaf (Blaze.textTag name) True )
         ( M.toList attrs )
 
     ElemOutput name attrs ls ->
       foldr
-        ( \(k,v) node -> node ! customAttribute (textTag k) (preEscapedTextValue v))
-        ( customParent (textTag name) $ foldMap toMarkup ls )
+        ( \(k,v) node -> node ! Blaze.customAttribute (Blaze.textTag k) (Blaze.preEscapedTextValue v))
+        ( customParent (Blaze.textTag name) $ foldMap toMarkup ls )
         ( M.toList attrs )
 
     TextOutput txt ->
@@ -73,7 +74,7 @@ toMarkup output =
       foldMap toMarkup ls
 
     HtmlDocType ->
-      preEscapedText "<!DOCTYPE html>"
+      Blaze.preEscapedText "<!DOCTYPE html>"
 
 
 toXml :: Output -> [Node]
@@ -98,10 +99,15 @@ toXml output =
       [ NodeContent txt ]
 
     RawTextOutput txt ->
-      [ NodeContent txt ]
+      Xml.elementNodes
+        $ Xml.documentRoot
+        $ Html.parseLT ("<div>" <> LT.fromStrict txt <> "</div>")
 
     CommentOutput txt ->
       [ NodeComment txt ]
+
+    ListOutput ls ->
+      foldMap toXml ls
 
     HtmlDocType ->
       []
@@ -159,8 +165,16 @@ toJsonPairs output =
 
     ElemOutput "j:object" attrs ls ->
       case M.toList attrs of
-        (key, _) : _ -> [Key.fromText key .= object (foldMap toJsonPairs ls)]
-        _            -> []
+        (key, "") : _ ->
+          [Key.fromText key .= object (foldMap toJsonPairs ls)]
+
+        (key, val) : _ ->
+          case Aeson.decodeStrictText val of
+            Just json -> [Key.fromText key .= (json :: Value) ]
+            Nothing   -> []
+
+        _ ->
+          []
 
     LeafOutput "j:number" attrs ->
       case filter (\(k, _) -> k /= "j:def") $ M.toList attrs of

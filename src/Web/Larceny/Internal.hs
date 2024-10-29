@@ -11,22 +11,21 @@ module Web.Larceny.Internal
 import           Control.Exception
 import           Lens.Micro
 import           Control.Monad.Trans  ( lift )
-import           Control.Monad.State  ( MonadState, StateT, evalStateT
-                                      , runStateT, get, modify, put
+import           Control.Monad.State  ( MonadState, StateT, runStateT
+                                      , get, modify, put
                                       )
 import qualified Data.Char           as Char
 import qualified Data.HashSet        as HS
 import qualified Data.List           as List
 import qualified Data.Map            as M
 import           Data.Maybe           ( fromMaybe )
-import           Data.Monoid          ( (<>) )
 import           Data.Text            ( Text )
 import qualified Data.Text           as T
 import qualified Data.Text.Lazy      as LT
 import qualified Text.HTML.DOM       as D
 import qualified Text.XML            as X
 --------------------------------------------------------------------------------
-import           Web.Larceny.Output   ( toMarkup, toText )
+import           Web.Larceny.Output   ( toText )
 import           Web.Larceny.Types
 import           Web.Larceny.Fills
 import           Web.Larceny.Html     ( html5Nodes, html5SelfClosingNodes )
@@ -97,13 +96,13 @@ toLarcenyName (X.Name tn _ _) =
 toLarcenyNode :: Settings m -> X.Node -> Node
 toLarcenyNode settings node =
   case node of
-    X.NodeContent c | setIgnoreContent settings ->
+    X.NodeContent _ | setIgnoreContent settings ->
       NodeContent ""
 
     X.NodeContent c ->
       NodeContent c
 
-    X.NodeComment c | setIgnoreComments settings ->
+    X.NodeComment _ | setIgnoreComments settings ->
       NodeContent ""
 
     X.NodeComment c ->
@@ -112,7 +111,7 @@ toLarcenyNode settings node =
     X.NodeInstruction _ ->
       NodeContent ""
 
-    X.NodeElement (X.Element tn@(X.Name name _ _) atr nodes) ->
+    X.NodeElement (X.Element tn atr nodes) ->
       let
         larcenyNodes =
           map (toLarcenyNode settings) nodes
@@ -175,8 +174,8 @@ mk settings =
           s <- get
           ls <- toUserState (pc s) (process settings nodes)
           case ls of
-            [l] -> return l
-            _   -> return $ ListOutput ls
+            [node] -> return node
+            _      -> return $ ListOutput ls
   in
   f
 
@@ -211,10 +210,6 @@ fallbackFill settings blank splices =
       fromMaybe (textFill "") $ M.lookup FallbackBlank splices
 
     Blank tn ->
-      let
-        fallback =
-          fromMaybe (textFill "") $ M.lookup FallbackBlank splices
-      in
       Fill $ \attr (pth, tpl) lib ->
         let
           message =
@@ -476,28 +471,8 @@ eUnboundAttrs (name, value) = do
     , concatMap mWord (possibleWords value))
 
 
-attrNodes :: Blank -> [Node]
-attrNodes (Blank txt) =
-  case T.splitOn "?" txt of
-    [tag, params] ->
-      let
-        attrs =
-          M.fromList $
-            fmap
-              ( \kv ->
-                case T.splitOn "=" kv of
-                  [k, v] -> (k, v)
-                  _      -> (kv, "")
-              )
-              $ T.splitOn "&" params
-      in
-      [NodeElement $ BlankElement (Name Nothing tag) attrs []]
-
-    _ ->
-      []
-
-
 attrPath :: Blank -> [Node]
+attrPath FallbackBlank = []
 attrPath (Blank txt) =
   let
     attrNode t children =
@@ -557,15 +532,9 @@ trimInnerWhitespace txt =
 jsonSplices :: Monad m => Substitutions s m
 jsonSplices =
   subs
-    [ ( "j:object"
-      , objectFill
-      )
-    , ( "j:array"
-      , arrayFill
-      )
-    , ( "j:value"
-      , leafFill "j:value"
-      )
+    [ ("j:object", objectFill)
+    , ("j:array", arrayFill)
+    , ("j:value", leafFill "j:value")
     ]
 
 

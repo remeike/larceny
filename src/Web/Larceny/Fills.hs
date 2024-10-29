@@ -27,7 +27,6 @@ import           Control.Monad.State  ( StateT )
 import qualified Data.Map            as M
 import           Data.Maybe           ( fromMaybe )
 import           Data.Text            ( Text )
-import qualified Data.Text           as T
 import qualified HTMLEntities.Text   as HE
 --------------------------------------------------------------------------------
 import           Web.Larceny.Types

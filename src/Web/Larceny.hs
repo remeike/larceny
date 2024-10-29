@@ -89,6 +89,7 @@ module Web.Larceny
   , defaultSettings
   , Output(..)
   , toHtml
+  , toMarkup
   , toXml
   , toJson
   , toText
@@ -98,7 +99,6 @@ module Web.Larceny
 import           Control.Monad         ( filterM )
 import           Control.Monad.State   ( evalStateT )
 import qualified Data.Map             as M
-import           Data.Monoid           ( (<>) )
 import           Data.Text             ( Text )
 import qualified Data.Text            as T
 import qualified Data.Text.IO         as ST
