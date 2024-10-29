@@ -41,6 +41,8 @@ library
                      , microlens
                      , logging
                      , blaze-markup
+                     , scientific
+                     , aeson
   hs-source-dirs:      src
   default-language:    Haskell2010
 
@@ -76,6 +78,9 @@ test-suite test
                      , html-entities
                      , logging
                      , blaze-markup
+                     , scientific
+                     , aeson
+                     , bytestring
                      , larceny
   hs-source-dirs:      test, src
   default-language:    Haskell2010

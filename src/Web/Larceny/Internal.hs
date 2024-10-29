@@ -170,7 +170,7 @@ mk settings =
         \pth m l ->
           let
             pc =
-              ProcessContext pth m l (setOverrides settings) f nodes
+              ProcessContext pth (m <> jsonSplices) l (setOverrides settings) f nodes
           in do
           s <- get
           ls <- toUserState (pc s) (process settings nodes)
@@ -539,7 +539,6 @@ trimWhitespace txt =
       (LT.lines txt)
 
 
-
 trimInnerWhitespace :: LT.Text -> LT.Text
 trimInnerWhitespace txt =
   snd $
@@ -553,3 +552,47 @@ trimInnerWhitespace txt =
       )
       (False, "")
       txt
+
+
+jsonSplices :: Monad m => Substitutions s m
+jsonSplices =
+  subs
+    [ ( "j:object"
+      , objectFill
+      )
+    , ( "j:array"
+      , arrayFill
+      )
+    , ( "j:value"
+      , leafFill "j:value"
+      )
+    ]
+
+
+objectSplices :: Monad m => Substitutions s m
+objectSplices =
+  subs
+    [ ("j:number", leafFill "j:number")
+    , ("j:bool", leafFill "j:bool")
+    , ("j:string", leafFill "j:string")
+    , ("j:field", leafFill "j:field")
+    , ("j:object", objectFill)
+    ]
+
+
+objectFill :: Monad m => Fill s m
+objectFill =
+  Fill $ \attrs (pth, tpl) lib -> do
+    ctxt <- get
+    (op, ctxt') <- lift $ runStateT (runTemplate tpl pth objectSplices lib) ctxt
+    put ctxt'
+    return $ ElemOutput "j:object" attrs [op]
+
+
+arrayFill :: Monad m => Fill s m
+arrayFill =
+  Fill $ \attrs (pth, tpl) lib -> do
+    ctxt <- get
+    (op, ctxt') <- lift $ runStateT (runTemplate tpl pth jsonSplices lib) ctxt
+    put ctxt'
+    return $ ElemOutput "j:array" attrs [op]

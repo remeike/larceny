@@ -89,6 +89,8 @@ module Web.Larceny
   , defaultSettings
   , Output(..)
   , toHtml
+  , toXml
+  , toJson
   , toText
   ) where
 

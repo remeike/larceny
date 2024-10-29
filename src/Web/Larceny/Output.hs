@@ -5,11 +5,19 @@ module Web.Larceny.Output
   ( Output(..)
   , toHtml
   , toMarkup
+  , toXml
+  , toJson
   , toText
   ) where
 
 --------------------------------------------------------------------------------
+import           Data.Aeson
+import qualified Data.Aeson               as Aeson
+import qualified Data.Aeson.Key           as Key
+import           Data.Aeson.Types          ( Pair, Value )
+import           Data.Maybe                ( fromMaybe, listToMaybe )
 import qualified Data.Map                 as M
+import           Data.Scientific           ( Scientific )
 import           Data.Text                 ( Text )
 import qualified Data.Text                as T
 import qualified Data.Text.Lazy           as LT
@@ -20,7 +28,7 @@ import qualified Text.Blaze.Renderer.Text as Blaze
 import           Text.XML
 import qualified Text.XML                 as Xml
 --------------------------------------------------------------------------------
-import           Web.Larceny.Types         ( Output(..) )
+import           Web.Larceny.Types         ( Attributes, Output(..) )
 --------------------------------------------------------------------------------
 
 
@@ -99,6 +107,126 @@ toXml output =
       []
 
 
+toJson :: Output -> Value
+toJson output =
+  case toJsonValue output of
+    [val] -> val
+    ls    -> toJSON ls
+
+
+toJsonValue :: Output -> [Value]
+toJsonValue output =
+  case output of
+    ElemOutput "j:object" _ ls ->
+      [object $ foldMap toJsonPairs ls]
+
+    ElemOutput "j:array" _ ls ->
+      foldMap toJsonValue ls
+
+    LeafOutput "j:value" attrs ->
+      pure $
+        case M.lookup "number" attrs of
+          Just number ->
+            numberValue attrs number
+
+          Nothing ->
+            case M.lookup "bool" attrs of
+              Just bool ->
+                boolValue attrs bool
+
+              Nothing ->
+                case M.lookup "string" attrs of
+                  Just string ->
+                    Aeson.String string
+
+                  Nothing ->
+                    fromMaybe Null $ fmap fieldValue $ M.lookup "field" attrs
+
+    ListOutput ls ->
+      foldMap toJsonValue ls
+
+    _ ->
+      [Null]
+
+
+toJsonPairs :: Output -> [Pair]
+toJsonPairs output =
+  case output of
+    ElemOutput "j:array" attrs ls ->
+      case M.toList attrs of
+        (key, _) : _ -> [Key.fromText key .= foldMap toJsonValue ls]
+        _            -> []
+
+    ElemOutput "j:object" attrs ls ->
+      case M.toList attrs of
+        (key, _) : _ -> [Key.fromText key .= object (foldMap toJsonPairs ls)]
+        _            -> []
+
+    LeafOutput "j:number" attrs ->
+      case filter (\(k, _) -> k /= "j:def") $ M.toList attrs of
+        (key, val) : _ -> [Key.fromText key .= numberValue attrs val]
+        _              -> []
+
+    LeafOutput "j:bool" attrs ->
+      case filter (\(k, _) -> k /= "j:def") $ M.toList attrs of
+        (key, val) : _ -> [Key.fromText key .= boolValue attrs val]
+        _              -> []
+
+    LeafOutput "j:field" attrs ->
+      case M.toList attrs of
+        (key, val) : _ -> [Key.fromText key .= fieldValue val]
+        _              -> []
+
+    LeafOutput "j:string" attrs ->
+      case M.toList attrs of
+        (key, val) : _ -> [Key.fromText key .= val]
+        _              -> []
+
+    ListOutput ls ->
+      foldMap toJsonPairs ls
+
+    _ ->
+      []
+
+
+numberValue :: Attributes -> Text -> Value
+numberValue attrs txt =
+  case readMaybe txt :: Maybe Scientific of
+    Just val ->
+      Number val
+
+    Nothing ->
+      case M.lookup "j:def" attrs of
+        Nothing       -> Null
+        Just fallback -> fieldValue fallback
+
+
+boolValue :: Attributes -> Text -> Value
+boolValue attrs txt =
+  case txt of
+    "True"  -> Bool True
+    "False" -> Bool False
+    "true"  -> Bool True
+    "false" -> Bool False
+    _       ->
+      case M.lookup "j:def" attrs of
+        Nothing       -> Null
+        Just fallback -> fieldValue fallback
+
+
+fieldValue :: Text -> Value
+fieldValue val =
+  case val of
+    "True"  -> Bool True
+    "False" -> Bool False
+    "true"  -> Bool True
+    "false" -> Bool False
+    "null"  -> Null
+    _       ->
+      case readMaybe val :: Maybe Scientific of
+        Just n  -> Number n
+        Nothing -> Aeson.String val
+
 
 toText :: Output -> Text
 toText output =
@@ -110,3 +238,8 @@ toText output =
     RawTextOutput txt -> txt
     CommentOutput txt -> txt
     HtmlDocType       -> ""
+
+
+readMaybe :: Read a => Text -> Maybe a
+readMaybe =
+  fmap fst . listToMaybe . reads . T.unpack

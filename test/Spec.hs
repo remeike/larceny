@@ -16,10 +16,13 @@ import           Control.Monad.State     (StateT (..), evalStateT, get, modify,
                                           runStateT)
 import qualified Control.Monad.State     as S
 import           Control.Monad.Trans     (liftIO)
+import qualified Data.ByteString.Lazy    as LBytes
+import qualified Data.Aeson              as Aeson
 import qualified Data.Map                as M
 import           Data.Maybe              (fromMaybe)
 import           Data.Text               (Text)
 import qualified Data.Text               as T
+import qualified Data.Text.Encoding      as T
 import qualified Data.Text.Lazy          as LT
 import           Data.Typeable
 import           Examples
@@ -27,6 +30,8 @@ import           Test.Hspec
 import qualified Test.Hspec.Core.Spec    as H
 import qualified Test.Hspec.Expectations as H
 import           Web.Larceny
+
+
 
 infix  4 .=
 (.=) :: S.MonadState s m => ASetter s s a b -> b -> m ()
@@ -134,6 +139,21 @@ renderM templateText = do
   let tpl = parseWithSettings settings (LT.fromStrict templateText)
   fmap toHtml $ liftIO $ evalStateT (runTemplate tpl p s l) ()
 
+renderJson :: Text -> LarcenyHspecM Text
+renderJson templateText = do
+  (LarcenyHspecState _ (LarcenyState p s l o settings)) <- S.get
+  let tpl = parseWithSettings settings (LT.fromStrict templateText)
+  fmap (T.decodeUtf8 . LBytes.toStrict . Aeson.encode . toJson)
+    $ liftIO
+    $ evalStateT (runTemplate tpl p s l) ()
+
+
+shouldRenderJson :: Text -> Text -> LarcenyHspecM ()
+shouldRenderJson template output = do
+  rendered <- renderJson template
+  liftIO $ shouldBe rendered output
+
+
 shouldRenderM :: Text -> Text -> LarcenyHspecM ()
 shouldRenderM templateText output = do
   rendered <- renderM templateText
@@ -166,7 +186,7 @@ shouldErrorM templateText p =
           Left e ->
             if p e then return H.Success
                    else return $ H.Failure Nothing $ H.Reason ("did not get expected exception: " <>
-                        exceptionType <> ", got this exeption instead: " <> show e)
+                        exceptionType <> ", got this exception instead: " <> show e)
       setResult result
   where exceptionType = (show . typeOf . instanceOf) p
         instanceOf :: Selector a -> a
@@ -178,6 +198,108 @@ main = spec
 spec :: IO ()
 spec = hspec $ do
   withLarceny $ do
+    describe "json" $ do
+      it "should render values" $ do
+        "<j:value bool='True'/>" `shouldRenderJson` "true"
+        "<j:value bool='4' j:def='False'/>" `shouldRenderJson` "false"
+        "<j:value bool='4'/>" `shouldRenderJson` "null"
+
+        "<j:value number='21'/>" `shouldRenderJson` "21"
+        "<j:value number='Hello' j:def='0'/>" `shouldRenderJson` "0"
+        "<j:value number='Hello'/>" `shouldRenderJson` "null"
+
+        "<j:value string='Hello'/>" `shouldRenderJson` "\"Hello\""
+        "<j:value string=''/>" `shouldRenderJson` "\"\""
+
+        "<j:value field='True'/>" `shouldRenderJson` "true"
+        "<j:value field='21'/>" `shouldRenderJson` "21"
+        "<j:value field='Hello'/>" `shouldRenderJson` "\"Hello\""
+        "<j:value field=''/>" `shouldRenderJson` "\"\""
+        "<j:value field='null'/>" `shouldRenderJson` "null"
+
+      it "should render values with fills" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ( "nums"
+              , fillChildrenWith $ subs [("good", textFill "1"), ("bad", textFill "NaN")]
+              )
+            , ( "bools"
+              , fillChildrenWith $ subs [("good", textFill "True"), ("bad", textFill "No")]
+              )
+            , ( "names"
+              , fillChildrenWith $ subs [("hello", textFill "Dolly"), ("hi", textFill "World")]
+              )
+            ]
+
+        "<bools><j:value bool='${good}'/></bools>" `shouldRenderJson` "true"
+        "<bools><j:value bool='${bad}' j:def='False'/></bools>" `shouldRenderJson` "false"
+        "<bools><j:value bool='${bad}'/></bools>" `shouldRenderJson` "null"
+
+        "<nums><j:value number='${good}'/></nums>" `shouldRenderJson` "1"
+        "<nums><j:value number='${bad}' j:def='0'/></nums>" `shouldRenderJson` "0"
+        "<nums><j:value number='${bad}'/></nums>" `shouldRenderJson` "null"
+
+        "<names><j:value string='${hello}'/></names>" `shouldRenderJson` "\"Dolly\""
+        "<names><j:value string='${hi}'/></names>" `shouldRenderJson` "\"World\""
+
+      it "should render objects" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ( "person-a"
+              , fillChildrenWith $
+                  subs
+                    [ ("name", textFill "Jane Doe")
+                    , ("age", textFill "28")
+                    , ("employed", textFill "True")
+                    , ("cat", fillChildrenWith $ subs [("name", textFill "Fluffer"), ("age", textFill "7")])
+                    ]
+              )
+            , ( "person-b"
+              , fillChildrenWith $
+                  subs
+                    [ ("name", textFill "John Doe")
+                    , ("age", textFill "26")
+                    , ("employed", textFill "False")
+                    ]
+              )
+            ]
+
+        "<j:object><person-a><j:string name='${name}'/><j:number age='${age}'/><j:bool employed='${employed}'/></person-a></j:object>"
+          `shouldRenderJson` "{\"age\":28,\"employed\":true,\"name\":\"Jane Doe\"}"
+
+        "<person-b><j:object><j:string name='${name}'/><j:number age='${age}'/><j:bool employed='${employed}'/></j:object></person-b>"
+          `shouldRenderJson` "{\"age\":26,\"employed\":false,\"name\":\"John Doe\"}"
+
+        "<person-a><j:object><j:string name='${name}'/><j:object pet><cat><j:string name='${name}'/><j:string age='${age}'/></cat></j:object></j:object></person-a>"
+          `shouldRenderJson` "{\"name\":\"Jane Doe\",\"pet\":{\"age\":\"7\",\"name\":\"Fluffer\"}}"
+
+      it "should render arrays" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ( "persons"
+              , mapSubs
+                  ( \(name, age, pets) ->
+                      subs
+                        [ ("name", textFill name)
+                        , ("age", textFill age)
+                        , ("pets", mapSubs (\(name', age') -> subs [("name", textFill name'), ("age", textFill age')]) pets)
+                        ]
+                  )
+                  [ ("Jane Doe", "28", [("Fluffer", "7"), ("Barks", "5")])
+                  , ("John Doe", "35", [("Chuck", "9")])
+                  ]
+              )
+            ]
+
+        "<j:value number='1'/><j:value number='3'/><j:value number='5'/>"
+          `shouldRenderJson` "[1,3,5]"
+
+        "<j:object><j:field val='1'/></j:object><j:object><j:field val='2'/></j:object>"
+          `shouldRenderJson` "[{\"val\":1},{\"val\":2}]"
+
+        "<persons><j:object><j:string name='${name}'/><j:number age='${age}'/><j:array pets><pets><j:object><j:string name='${name}'/><j:number age='${age}'/></j:object></pets></j:array></j:object></persons>"
+          `shouldRenderJson` "[{\"age\":28,\"name\":\"Jane Doe\",\"pets\":[{\"age\":7,\"name\":\"Fluffer\"},{\"age\":5,\"name\":\"Barks\"}]},{\"age\":35,\"name\":\"John Doe\",\"pets\":[{\"age\":9,\"name\":\"Chuck\"}]}]"
+
     describe "white space" $ do
       it "should remove spaces next to line breaks" $ do
         txt1 <-

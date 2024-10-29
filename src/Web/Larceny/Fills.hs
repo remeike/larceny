@@ -7,6 +7,7 @@ module Web.Larceny.Fills
   , rawTextFill'
   , outputFill
   , outputFill'
+  , leafFill
   , mapSubs
   , mapSubs'
   , fillChildren
@@ -123,6 +124,11 @@ rawTextFill' t = Fill $ \_m _t _l -> fmap TextOutput t
 -- | TODO
 outputFill' :: Monad m => StateT s m Output -> Fill s m
 outputFill' t = Fill $ \_m _t _l -> t
+
+-- | TODO
+leafFill :: Monad m => Text -> Fill s m
+leafFill name =
+  Fill $ \attrs _ _ -> return $ LeafOutput name attrs
 
 -- | Create substitutions for each element in a list and fill the child nodes
 -- with those substitutions.
