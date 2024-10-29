@@ -248,4 +248,5 @@ data Output
   | RawTextOutput Text
   | CommentOutput Text
   | HtmlDocType
+  | VoidOutput
   deriving (Eq, Show)

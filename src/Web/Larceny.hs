@@ -71,6 +71,8 @@ module Web.Larceny
   , outputFill'
   , mapSubs
   , mapSubs'
+  , leafFill
+  , voidFill
   , fillChildren
   , fillChildrenWith
   , fillChildrenWith'

@@ -77,6 +77,9 @@ toMarkup output =
     HtmlDocType ->
       Blaze.preEscapedText "<!DOCTYPE html>"
 
+    VoidOutput ->
+      mempty
+
 
 toXml :: Output -> [Node]
 toXml output =
@@ -111,6 +114,9 @@ toXml output =
       foldMap toXml ls
 
     HtmlDocType ->
+      []
+
+    VoidOutput ->
       []
 
 
@@ -153,7 +159,7 @@ toJsonValue output =
       foldMap toJsonValue ls
 
     _ ->
-      [Null]
+      []
 
 
 toJsonPairs :: Output -> [Pair]
@@ -253,6 +259,7 @@ toText output =
     RawTextOutput txt -> txt
     CommentOutput txt -> txt
     HtmlDocType       -> ""
+    VoidOutput        -> ""
 
 
 readMaybe :: Read a => Text -> Maybe a
