@@ -20,6 +20,7 @@ import qualified Data.Map                 as M
 import           Data.Scientific           ( Scientific )
 import           Data.Text                 ( Text )
 import qualified Data.Text                as T
+import qualified Data.Text.Encoding       as TE
 import qualified Data.Text.Lazy           as LT
 import           Text.Blaze                ( Markup, (!) )
 import qualified Text.Blaze               as Blaze
@@ -169,7 +170,7 @@ toJsonPairs output =
           [Key.fromText key .= object (foldMap toJsonPairs ls)]
 
         (key, val) : _ ->
-          case Aeson.decodeStrictText val of
+          case Aeson.decodeStrict $ TE.encodeUtf8 val of
             Just json -> [Key.fromText key .= (json :: Value) ]
             Nothing   -> []
 
