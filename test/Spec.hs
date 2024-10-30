@@ -12,7 +12,6 @@
 import           Control.Concurrent.MVar  ( newEmptyMVar, putMVar, takeMVar )
 import           Control.Exception        ( Exception, throw, try )
 import           Lens.Micro
-import           Control.Monad            ( when)
 import           Control.Monad.State      ( StateT(..)
                                           , evalStateT
                                           , get
@@ -203,6 +202,93 @@ main = spec
 spec :: IO ()
 spec = hspec $ do
   withLarceny $ do
+    describe "fragments" $ do
+      it "should bubble fragment to top" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ( "to1", textFill "Dolly" )
+            , ( "to2", textFill "World" )
+            , ( "to3", textFill "there" )
+            ]
+
+        "<main><h:fragment condition='True'><p>Hello <span><to1/></span></p></h:fragment>\
+        \<p>Hey <span><to2/></span></p>\
+        \<p>Hi <span><to3/></span></p></main>"
+          `shouldRenderM` "<p>Hello <span>Dolly</span></p>"
+
+        "<main><p>Hello <span><to1/></span></p>\
+        \<h:fragment condition='True'><p>Hey <span><to2/></span></p></h:fragment>\
+        \<p>Hi <span><to3/></span></p></main>"
+          `shouldRenderM` "<p>Hey <span>World</span></p>"
+
+        "<main><p>Hello <span><to1/></span></p>\
+        \<p>Hey <span><to2/></span></p>\
+        \<h:fragment condition='True'><p>Hi <span><to3/></span></p></h:fragment></main>"
+          `shouldRenderM` "<p>Hi <span>there</span></p>"
+
+        "<main><p>Hello <h:fragment condition='True'><span><to1/></span></h:fragment></p>\
+        \<p>Hey <span><to2/></span></p>\
+        \<p>Hi <span><to3/></span></p></main>"
+          `shouldRenderM` "<span>Dolly</span>"
+
+        "<main><p>Hello <span><to1/></span></p>\
+        \<p>Hey <h:fragment condition='True'><span><to2/></span></h:fragment></p>\
+        \<p>Hi <span><to3/></span></p></main>"
+          `shouldRenderM` "<span>World</span>"
+
+        "<main><p>Hello <span><to1/></span></p>\
+        \<p>Hey <span><to2/></span></p>\
+        \<p>Hi <h:fragment condition='True'><span><to3/></span></h:fragment></p></main>"
+          `shouldRenderM` "<span>there</span>"
+
+      it "should use match to set fragment" $ do
+        let
+          tpl =
+            "<main><h:fragment key='dolly' match='${frag}'><p>Hello <span>Dolly</span></p></h:fragment>\
+            \<h:fragment key='world' match='${frag}'><p>Hey <span>World</span></p></h:fragment>\
+            \<h:fragment key='there' match='${frag}'><p>Hi <span>there</span></p></h:fragment></main>"
+
+        hLarcenyState.lSubs .= subs [("frag", textFill "dolly")]
+        tpl `shouldRenderM` "<p>Hello <span>Dolly</span></p>"
+
+        hLarcenyState.lSubs .= subs [("frag", textFill "world")]
+        tpl `shouldRenderM` "<p>Hey <span>World</span></p>"
+
+        hLarcenyState.lSubs .= subs [("frag", textFill "there")]
+        tpl `shouldRenderM` "<p>Hi <span>there</span></p>"
+
+      it "should not run actions for nodes that are not rendered" $ do
+        let
+          tplSubs =
+            subs
+              [ ( "who"
+                , Fill $
+                    \_ _ _ -> do
+                      modify (+1)
+                      return $ TextOutput "world"
+                )
+              , ( "count"
+                , Fill $
+                    \_ _ _ -> do
+                      n <- get
+                      return $ TextOutput (T.pack $ show n)
+                )
+              ]
+
+          tpl =
+            "<main><p>Hi <who/> (<count/>)</p>\
+            \<h:fragment condition='True'><p>Hey <who/> (<count/>)</p></h:fragment>\
+            \<p>Hello <who/> (<count/>)</p></main>"
+
+          runTpl =
+            runTemplate (parse tpl) ["default"] tplSubs mempty :: StateT Int IO Output
+
+        (output, n) <- liftIO $ runStateT runTpl 0
+        let txt = toHtml output
+        liftIO $ txt `shouldBe` "<p>Hey world (2)</p>"
+        liftIO $ n `shouldBe` 2
+        setResult H.Success
+
     describe "json" $ do
       it "should render values" $ do
         "<j:value bool='True'/>" `shouldRenderJson` "true"
@@ -360,15 +446,15 @@ spec = hspec $ do
             subs
               [ ( "who"
                 , Fill $
-                    \_m tpl lib -> do
+                    \_ _ _ -> do
                       modify (+1)
-                      unFill (textFill "world") _m tpl lib
+                      return $ TextOutput "world"
                 )
               , ( "count"
                 , Fill $
-                    \_m tpl lib -> do
+                    \_ _ _ -> do
                       n <- get
-                      unFill (textFill (T.pack $ show n)) _m tpl lib
+                      return $ TextOutput (T.pack $ show n)
                 )
               ]
 
@@ -377,16 +463,9 @@ spec = hspec $ do
 
         (output, n) <- liftIO $ runStateT myTpl 1
         let txt = toHtml output
-        when (txt /= "<p>hello world (2)</p>")
-          $ setResult
-          $ H.Failure Nothing
-          $ H.Reason
-          $ "Expected <p>hello world (2)</p> but got " <> T.unpack txt
 
-        when (n /= 2)
-          $ setResult
-          $ H.Failure Nothing $ H.Reason $ "Expected 2 but got " <> show n
-
+        liftIO $ txt `shouldBe` "<p>hello world (2)</p>"
+        liftIO $ n `shouldBe` 2
         setResult H.Success
 
     describe "xml" $ do
@@ -681,7 +760,7 @@ spec = hspec $ do
     fallbackTests
     attrTests
     doctypeTests
-    conditionalTests
+    conditionTests
     namespaceTests
   statefulTests
 
@@ -746,9 +825,9 @@ doctypeTests = do
       "<!DOCTYPE html><html><p>Hello world</p></html>"
       `shouldRenderM` "<!DOCTYPE html><html><p>Hello world</p></html>"
 
-conditionalTests :: SpecWith LarcenyHspecState
-conditionalTests = do
-  describe "conditionals" $ do
+conditionTests :: SpecWith LarcenyHspecState
+conditionTests = do
+  describe "conditions" $ do
     let template cond =
           "<if condition=\"" <> cond <> "\">\
           \  <then>It's true!</then>\

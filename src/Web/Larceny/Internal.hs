@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 
 
 module Web.Larceny.Internal
@@ -168,11 +169,15 @@ mk settings =
       Template $
         \pth m l ->
           let
+            splices =
+              subs [("h:fragment", fillChildren)] <> m <> jsonSplices
+
             pc =
-              ProcessContext pth (m <> jsonSplices) l (setOverrides settings) f nodes
+              ProcessContext pth splices l (setOverrides settings) f nodes
           in do
           s <- get
-          ls <- toUserState (pc s) (process settings nodes)
+          (ls, _) <- toUserState (pc s) (process settings nodes)
+
           case ls of
             [node] -> return node
             _      -> return $ ListOutput ls
@@ -263,7 +268,7 @@ pcState = lens _pcState (\pc s -> pc { _pcState = s })
 
 
 type ProcessT s m =
-  StateT (ProcessContext s m) m [Output]
+  StateT (ProcessContext s m) m ([Output], Bool)
 
 
 add :: Monad m => Substitutions s m -> Template s m -> Template s m
@@ -275,7 +280,7 @@ process :: Monad m => Settings m -> [Node] -> ProcessT s m
 process settings nodes =
   case nodes of
     [] ->
-      return []
+      return ([], False)
 
     NodeElement (BindElement atr kids) : nextNodes -> do
       pcNodes .= nextNodes
@@ -284,10 +289,10 @@ process settings nodes =
     currentNode : nextNodes -> do
       pcNodes .= nextNodes
 
-      processedNode <-
+      (processedNode, bubble) <-
         case currentNode of
           NodeElement DoctypeElement  ->
-            return [HtmlDocType]
+            return ([HtmlDocType], False)
 
           NodeElement (ApplyElement atr kids) ->
             processApply settings atr kids
@@ -295,17 +300,28 @@ process settings nodes =
           NodeElement (PlainElement tn atr kids) ->
             processPlain settings tn atr kids
 
+          NodeElement (BlankElement (Name _ "h:fragment") atr kids) -> do
+            processBlankFragment settings "h:fragment" atr kids
+
           NodeElement (BlankElement (Name _ name) atr kids) ->
             processBlank settings name atr kids
 
           NodeContent t ->
-            return [TextOutput t]
+            return ([TextOutput t], False)
 
           NodeComment c ->
-            return [CommentOutput c]
+            return ([CommentOutput c], False)
 
-      restOfNodes <- process settings nextNodes
-      return $ processedNode <> restOfNodes
+      if bubble then
+        return (processedNode, bubble)
+
+      else do
+        (restOfNodes, bubble') <- process settings nextNodes
+
+        if bubble' then
+          return (restOfNodes, True)
+        else
+          return (processedNode <> restOfNodes, False)
 
 
 -- Add the open tag and attributes, process the children, then close
@@ -315,8 +331,12 @@ processPlain ::
 processPlain settings tagName atr kids = do
   pc <- get
   atrs <- processAttrs settings atr
-  processed <- process settings kids
-  return $ elemOutput (_pcOverrides pc) tagName atrs processed
+  (processed, bubble) <- process settings kids
+
+  if bubble then
+    return (processed, bubble)
+  else
+    return (elemOutput (_pcOverrides pc) tagName atrs processed, bubble)
 
 
 selfClosing :: Overrides -> HS.HashSet Text
@@ -372,7 +392,7 @@ fillAttr settings eBlankText = do
 
   case eBlankText of
     Right hole@(Blank txt) | T.isInfixOf "?" txt || T.isInfixOf "->" txt -> do
-      ls <- process settings $ attrPath hole
+      (ls, _) <- process settings $ attrPath hole
       return $ T.concat $ fmap toText ls
 
     Right hole ->
@@ -395,10 +415,34 @@ processBlank ::
 processBlank settings tagName atr kids = do
   (ProcessContext pth m l _ mko _ _) <- get
   filled <- fillAttrs settings atr
-  sequence
-    [ toProcessState $
-        unFill (fillIn settings (Blank tagName) m) filled (pth, add m (mko kids)) l
-    ]
+  fmap (,False) $
+    sequence
+      [ toProcessState $
+          unFill (fillIn settings (Blank tagName) m) filled (pth, add m (mko kids)) l
+      ]
+
+-- Same as `processBlank` but checking the attributes to determine whether it
+-- should be bubble up.
+processBlankFragment ::
+  Monad m => Settings m -> Text -> Attributes -> [Node] -> ProcessT s m
+processBlankFragment settings tagName atr kids = do
+  (ProcessContext pth m l _ mko _ _) <- get
+  filled <- fillAttrs settings atr
+
+  output <-
+    sequence
+      [ toProcessState $
+          unFill (fillIn settings (Blank tagName) m) filled (pth, add m (mko kids)) l
+      ]
+
+  case M.lookup "condition" filled of
+    Just "True" ->
+      return (output, True)
+
+    _ ->
+      case (M.lookup "key" filled, M.lookup "match" filled) of
+        (Just k, Just v) -> return (output, k == v)
+        _                -> return (output, False)
 
 
 processBind ::
@@ -432,7 +476,8 @@ processApply settings atr kids = do
   let (absolutePath, tplToApply) = findTemplateFromAttrs pth l filledAttrs
   contentTpl <- toProcessState $ runTemplate (mko kids) pth m l
   let contentSub = subs [("apply-content", outputFill contentTpl)]
-  sequence [ toProcessState $ runTemplate tplToApply absolutePath (contentSub `M.union` m) l ]
+  fmap (,False)
+    $ sequence [ toProcessState $ runTemplate tplToApply absolutePath (contentSub `M.union` m) l ]
 
 
 findTemplateFromAttrs ::
