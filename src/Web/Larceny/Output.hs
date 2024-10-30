@@ -74,6 +74,9 @@ toMarkup output =
     ListOutput ls ->
       foldMap toMarkup ls
 
+    FragmentOutput ls ->
+      foldMap toMarkup ls
+
     HtmlDocType ->
       Blaze.preEscapedText "<!DOCTYPE html>"
 
@@ -111,6 +114,9 @@ toXml output =
       [ NodeComment txt ]
 
     ListOutput ls ->
+      foldMap toXml ls
+
+    FragmentOutput ls ->
       foldMap toXml ls
 
     HtmlDocType ->
@@ -156,6 +162,9 @@ toJsonValue output =
                     fromMaybe Null $ fmap fieldValue $ M.lookup "field" attrs
 
     ListOutput ls ->
+      foldMap toJsonValue ls
+
+    FragmentOutput ls ->
       foldMap toJsonValue ls
 
     _ ->
@@ -204,6 +213,9 @@ toJsonPairs output =
         _              -> []
 
     ListOutput ls ->
+      foldMap toJsonPairs ls
+
+    FragmentOutput ls ->
       foldMap toJsonPairs ls
 
     _ ->
@@ -256,6 +268,7 @@ toText output =
     ElemOutput _ _ ls -> foldMap toText ls
     TextOutput txt    -> txt
     ListOutput ls     -> foldMap toText ls
+    FragmentOutput ls -> foldMap toText ls
     RawTextOutput txt -> txt
     CommentOutput txt -> txt
     HtmlDocType       -> ""

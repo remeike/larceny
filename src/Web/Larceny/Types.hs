@@ -249,4 +249,5 @@ data Output
   | CommentOutput Text
   | HtmlDocType
   | VoidOutput
+  | FragmentOutput [Output]
   deriving (Eq, Show)

@@ -9,6 +9,7 @@ module Web.Larceny.Fills
   , outputFill'
   , leafFill
   , voidFill
+  , commentFill
   , mapSubs
   , mapSubs'
   , fillChildren
@@ -134,6 +135,11 @@ leafFill name =
 voidFill :: Monad m => Fill s m
 voidFill =
   Fill $ \_ _ _ -> return $ VoidOutput
+
+-- | TODO
+commentFill :: Monad m => Text -> Fill s m
+commentFill comment =
+  Fill $ \_ _ _ -> return $ CommentOutput comment
 
 -- | Create substitutions for each element in a list and fill the child nodes
 -- with those substitutions.

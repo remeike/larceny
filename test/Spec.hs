@@ -209,6 +209,8 @@ spec = hspec $ do
             [ ( "to1", textFill "Dolly" )
             , ( "to2", textFill "World" )
             , ( "to3", textFill "there" )
+            , ( "person1", fillChildrenWith $ subs [("name", textFill "Jane Doe")])
+            , ( "person2", fillChildrenWith $ subs [("name", textFill "John Doe")])
             ]
 
         "<main><h:fragment condition='True'><p>Hello <span><to1/></span></p></h:fragment>\
@@ -240,6 +242,14 @@ spec = hspec $ do
         \<p>Hey <span><to2/></span></p>\
         \<p>Hi <h:fragment condition='True'><span><to3/></span></h:fragment></p></main>"
           `shouldRenderM` "<span>there</span>"
+
+        "<main><div><p>Ok... </p><person1><h:fragment condition='True'><p>Hi, <name/></p></h:fragment></person1></div>\
+        \<div><p>Ok... </p><person2><p>Hi, <name/></p></person2></div></main>"
+          `shouldRenderM` "<p>Hi, Jane Doe</p>"
+
+        "<main><div><p>Ok... </p><person1><p>Hi, <name/></p></person1></div>\
+        \<div><p>Ok... </p><person2><h:fragment condition='True'><p>Hi, <name/></p></h:fragment></person2></div></main>"
+          `shouldRenderM` "<p>Hi, John Doe</p>"
 
       it "should use match to set fragment" $ do
         let

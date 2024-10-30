@@ -185,12 +185,15 @@ mk settings =
   f
 
 
-toProcessState :: Monad m => StateT s m a -> StateT (ProcessContext s m) m a
+toProcessState :: Monad m => StateT s m Output -> StateT (ProcessContext s m) m (Output, Bool)
 toProcessState f = do
   pc <- get
   (result, s') <- lift $ runStateT f (_pcState pc)
   pcState .= s'
-  return result
+
+  case result of
+    FragmentOutput _ -> return (result, True)
+    _                -> return (result, False)
 
 
 toUserState ::
@@ -227,9 +230,9 @@ fallbackFill settings blank splices =
           fallback =
             fromMaybe
               ( if setDebugComments settings then
-                  textFill $ "<!--" <> message <> "-->"
+                  commentFill message
                 else
-                  textFill ""
+                  voidFill
               )
               $ M.lookup FallbackBlank splices
         in do
@@ -396,12 +399,12 @@ fillAttr settings eBlankText = do
       return $ T.concat $ fmap toText ls
 
     Right hole ->
-      fmap toText
+      fmap (toText . fst)
         $ toProcessState
         $ unFill (fillIn settings hole m) mempty (pth, mko []) l
 
     Left text ->
-      fmap toText
+      fmap (toText . fst)
         $ toProcessState
         $ return
         $ TextOutput text
@@ -415,34 +418,38 @@ processBlank ::
 processBlank settings tagName atr kids = do
   (ProcessContext pth m l _ mko _ _) <- get
   filled <- fillAttrs settings atr
-  fmap (,False) $
-    sequence
-      [ toProcessState $
-          unFill (fillIn settings (Blank tagName) m) filled (pth, add m (mko kids)) l
-      ]
+  (output, bubble) <-
+    toProcessState
+      $ unFill (fillIn settings (Blank tagName) m) filled (pth, add m (mko kids)) l
+  return ([output], bubble)
+
 
 -- Same as `processBlank` but checking the attributes to determine whether it
--- should be bubble up.
+-- should be bubbled up.
 processBlankFragment ::
   Monad m => Settings m -> Text -> Attributes -> [Node] -> ProcessT s m
 processBlankFragment settings tagName atr kids = do
   (ProcessContext pth m l _ mko _ _) <- get
   filled <- fillAttrs settings atr
 
-  output <-
-    sequence
-      [ toProcessState $
-          unFill (fillIn settings (Blank tagName) m) filled (pth, add m (mko kids)) l
-      ]
+  (output, bubble) <-
+    toProcessState
+      $ unFill (fillIn settings (Blank tagName) m) filled (pth, add m (mko kids)) l
 
-  case M.lookup "condition" filled of
-    Just "True" ->
-      return (output, True)
+  if bubble then
+    return ([output], bubble)
+  else
+    case M.lookup "condition" filled of
+      Just "True" ->
+        return ([FragmentOutput [output]], True)
 
-    _ ->
-      case (M.lookup "key" filled, M.lookup "match" filled) of
-        (Just k, Just v) -> return (output, k == v)
-        _                -> return (output, False)
+      _ ->
+        case (M.lookup "key" filled, M.lookup "match" filled) of
+          (Just k, Just v) | k == v ->
+            return ([FragmentOutput [output]], True)
+
+          _ ->
+            return ([output], False)
 
 
 processBind ::
@@ -474,10 +481,19 @@ processApply settings atr kids = do
   (ProcessContext pth m l _ mko _ _) <- get
   filledAttrs <- fillAttrs settings atr
   let (absolutePath, tplToApply) = findTemplateFromAttrs pth l filledAttrs
-  contentTpl <- toProcessState $ runTemplate (mko kids) pth m l
-  let contentSub = subs [("apply-content", outputFill contentTpl)]
-  fmap (,False)
-    $ sequence [ toProcessState $ runTemplate tplToApply absolutePath (contentSub `M.union` m) l ]
+  (contentTpl, bubble) <- toProcessState $ runTemplate (mko kids) pth m l
+
+  if bubble then
+    return ([contentTpl], bubble)
+  else
+    let
+      contentSub =
+        subs [("apply-content", outputFill contentTpl)]
+    in do
+    (output, bubble') <-
+      toProcessState
+        $ runTemplate tplToApply absolutePath (contentSub `M.union` m) l
+    return ([output], bubble')
 
 
 findTemplateFromAttrs ::
