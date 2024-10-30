@@ -435,6 +435,27 @@ spec = hspec $ do
 
         liftIO $ txt `shouldBe` "<p> Hello, Dolly. Hi!!! </p><p>Hello, World. Hey!</p>"
 
+      it "should not remove white space from <pre> tags" $ do
+        txt <-
+          renderM
+            "   <p>   Hello,  Dolly.    Hi!!!   </p> \
+            \\n <pre>                                \
+            \\n    Here be    Javacript...           \
+            \\n    function() { console.log('Yay')}; \
+            \\n                                      \
+            \\n</pre>                                \
+            \\n<div>Back to normal</div>"
+
+        liftIO $
+          txt `shouldBe`
+            "<p> Hello, Dolly. Hi!!! </p>\
+            \<pre>                                \
+            \\n    Here be    Javacript...           \
+            \\n    function() { console.log('Yay')}; \
+            \\n                                      \
+            \\n</pre>\
+            \<div>Back to normal</div>"
+
     describe "parse" $ do
       it "should parse HTML into a Template" $ do
         hLarcenyState.lSubs .= subst

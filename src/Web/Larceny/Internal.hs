@@ -567,9 +567,25 @@ trimWhitespace txt =
     List.foldl'
       ( \(prev, acc) t ->
         case LT.strip t of
-            t' | LT.isPrefixOf "<" t'   -> (t', acc <> trimInnerWhitespace t')
-            t' | LT.isSuffixOf ">" prev -> (t', acc <> trimInnerWhitespace t')
-            t'                         ->  (t', acc <> " " <> trimInnerWhitespace t')
+            -- Start of <pre> tags
+            t' | LT.isPrefixOf "<pre" t' ->
+              (t', acc <> LT.stripStart t)
+            -- End of <pre> tags
+            t' | LT.isPrefixOf "</pre>" t ->
+              (t', acc <> "\n" <> LT.stripEnd t)
+            -- Inside <pre> tags
+            _ | LT.isPrefixOf "<pre" prev ->
+              (prev, acc <> "\n" <> t)
+
+            --
+            t' | LT.isPrefixOf "<" t' ->
+              (t', acc <> trimInnerWhitespace t')
+
+            t' | LT.isSuffixOf ">" prev ->
+              (t', acc <> trimInnerWhitespace t')
+
+            t' ->
+              (t', acc <> " " <> trimInnerWhitespace t')
       )
       ("", "")
       (LT.lines txt)
