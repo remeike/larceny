@@ -2,14 +2,17 @@
 
 module Examples where
 
-import           Control.Monad.State (evalStateT)
-import           Control.Monad.Trans (liftIO)
+--------------------------------------------------------------------------------
+import           Control.Monad.State  ( evalStateT )
+import           Control.Monad.Trans  ( liftIO )
 import qualified Data.Map            as M
-import           Data.Monoid         ((<>))
-import           Data.Text           (Text)
+import           Data.Text            ( Text )
 import qualified Data.Text           as T
 import qualified Data.Text.Lazy      as LT
+--------------------------------------------------------------------------------
 import           Web.Larceny
+--------------------------------------------------------------------------------
+
 
 tpl1 :: Text
 tpl1 = "<h1>Hello</h1>"
@@ -67,7 +70,7 @@ modifyInnerText f = Fill $
   \_attrs (_pth, tpl) _l ->
     liftIO $ do
       t' <- evalStateT (runTemplate tpl ["default"] mempty mempty) ()
-      return $ f t'
+      return $ TextOutput $ f $ toText t'
 
 tplLib :: Library () IO
 tplLib = M.fromList [(["skater"], parse "Beyonslay")]

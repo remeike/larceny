@@ -45,58 +45,75 @@ Admire your lovely app!!
 
 -}
 
-module Web.Larceny ( Blank(..)
-                   , Fill(..)
-                   , Attributes
-                   , Name(..)
-                   , Substitutions
-                   , Template(..)
-                   , Path
-                   , Library
-                   , Overrides(..)
-                   , defaultOverrides
-                   , render
-                   , renderWith
-                   , renderRelative
-                   , loadTemplates
-                   , getAllTemplates
-                   , subs
-                   , fallbackSub
-                   , textFill
-                   , textFill'
-                   , rawTextFill
-                   , rawTextFill'
-                   , mapSubs
-                   , mapSubs'
-                   , fillChildren
-                   , fillChildrenWith
-                   , fillChildrenWith'
-                   , maybeFillChildrenWith
-                   , maybeFillChildrenWith'
-                   , ifFill
-                   , useAttrs
-                   , FromAttribute(..)
-                   , AttrError(..)
-                   , ApplyError(..)
-                   , a
-                   , (%)
-                   , parse
-                   , parseWithOverrides) where
+module Web.Larceny
+  ( Blank(..)
+  , Fill(..)
+  , Attributes
+  , Name(..)
+  , Substitutions
+  , Template(..)
+  , Path
+  , Library
+  , Overrides(..)
+  , defaultOverrides
+  , render
+  , renderWith
+  , renderRelative
+  , loadTemplates
+  , getAllTemplates
+  , subs
+  , fallbackSub
+  , textFill
+  , textFill'
+  , rawTextFill
+  , rawTextFill'
+  , outputFill
+  , outputFill'
+  , mapSubs
+  , mapSubs'
+  , leafFill
+  , voidFill
+  , fillChildren
+  , fillChildrenWith
+  , fillChildrenWith'
+  , maybeFillChildrenWith
+  , maybeFillChildrenWith'
+  , ifFill
+  , useAttrs
+  , FromAttribute(..)
+  , AttrError(..)
+  , ApplyError(..)
+  , a
+  , (%)
+  , parse
+  , parseWithSettings
+  , Settings(..)
+  , defaultSettings
+  , Output(..)
+  , toHtml
+  , toMarkup
+  , toXml
+  , toJson
+  , toText
+  ) where
 
-import           Control.Monad        (filterM)
-import           Control.Monad.State  (evalStateT)
+--------------------------------------------------------------------------------
+import           Control.Monad         ( filterM )
+import           Control.Monad.State   ( evalStateT )
 import qualified Data.Map             as M
-import           Data.Monoid          ((<>))
-import           Data.Text            (Text)
+import           Data.Text             ( Text )
 import qualified Data.Text            as T
 import qualified Data.Text.IO         as ST
 import qualified Data.Text.Lazy       as LT
-import           System.Directory     (doesDirectoryExist, listDirectory)
-import           System.FilePath      (dropExtension, takeExtension)
-------------
+import           System.Directory      ( doesDirectoryExist, listDirectory )
+import           System.FilePath       ( dropExtension, takeExtension )
+--------------------------------------------------------------------------------
 import           Web.Larceny.Fills
 import           Web.Larceny.Internal
+import           Web.Larceny.Output
 import           Web.Larceny.Types
+--------------------------------------------------------------------------------
+
 
 -- | Render a template from the library by path.
 --
@@ -106,14 +123,17 @@ import           Web.Larceny.Types
 render :: Monad m => Library s m -> s -> Path -> m (Maybe Text)
 render l = renderWith l mempty
 
+
 -- | Render a template from the library by path, with some additional
 -- substitutions.
 --
 -- @
 -- renderWith appTemplates extraSubs appState ["path", "to", "template"]
 -- @
-renderWith :: Monad m => Library s m -> Substitutions s m -> s -> Path -> m (Maybe Text)
+renderWith ::
+  Monad m => Library s m -> Substitutions s m -> s -> Path -> m (Maybe Text)
 renderWith l sub s = renderRelative l sub s []
+
 
 -- | Render a template found relative to current template's path.
 --
@@ -127,32 +147,48 @@ renderWith l sub s = renderRelative l sub s []
 -- ["current"] and target path of ["private", "dashboard"] will find
 -- ["current", "private", "dashboard"]. If there /wasn't/ a ["current",
 -- "private", "dashboard"], it would render ["private", "dashboard"].
-renderRelative :: Monad m => Library s m -> Substitutions s m -> s -> Path -> Path -> m (Maybe Text)
+renderRelative ::
+  Monad m =>
+  Library s m -> Substitutions s m -> s -> Path -> Path -> m (Maybe Text)
 renderRelative l sub s givenPath targetPath =
   case findTemplate l givenPath targetPath of
-    (pth, Just (Template run)) -> Just <$> evalStateT (run pth sub l) s
-    (_, Nothing) -> return Nothing
+    (pth, Just (Template run)) ->
+      Just . toHtml <$> evalStateT (run pth sub l) s
+
+    (_, Nothing) ->
+      return Nothing
+
 
 -- | Load all the templates in some directory into a Library.
-loadTemplates :: Monad m => FilePath -> Overrides -> IO (Library s m)
-loadTemplates path overrides =
-  do tpls <- getAllTemplates path
-     M.fromList <$>
-       mapM (\file -> do content <- ST.readFile (path <> "/" <> file)
-                         return (mkPath file,
-                                 parseWithOverrides overrides (LT.fromStrict content)))
-                         tpls
-  where mkPath p = T.splitOn "/" $ T.pack $ dropExtension p
+loadTemplates :: Monad m => FilePath -> Settings m -> IO (Library s m)
+loadTemplates path settings =
+  let
+    mkPath p =
+      T.splitOn "/" $ T.pack $ dropExtension p
+  in do
+  tpls <- getAllTemplates path
+
+  M.fromList <$>
+    mapM
+      ( \file -> do
+          content <- ST.readFile (path <> "/" <> file)
+          return
+            ( mkPath file
+            , parseWithSettings settings (LT.fromStrict content)
+            )
+      ) tpls
+
 
 getAllTemplates :: FilePath -> IO [FilePath]
-getAllTemplates path =
-  do cExist <- doesDirectoryExist path
-     cs <- if cExist then listDirectory path else return []
-     let tpls = filter ((== ".tpl") . takeExtension) cs
-     dirs <- filterM (doesDirectoryExist . (\d -> path <> "/" <> d)) cs
-     rs <- mapM (\dir -> do r <- getAllTemplates (path <> "/" <> dir)
-                            return $ map (\p -> dir <> "/" <> p) r) dirs
-     return $ tpls ++ concat rs
-
-{-# ANN module ("HLint: ignore Redundant lambda" :: String) #-}
-{-# ANN module ("HLint: ignore Use first" :: String) #-}
+getAllTemplates path = do
+  cExist <- doesDirectoryExist path
+  cs <- if cExist then listDirectory path else return []
+  let tpls = filter ((== ".tpl") . takeExtension) cs
+  dirs <- filterM (doesDirectoryExist . (\d -> path <> "/" <> d)) cs
+  rs <-
+    mapM
+      ( \dir -> do
+          r <- getAllTemplates (path <> "/" <> dir)
+          return $ map (\p -> dir <> "/" <> p) r
+      ) dirs
+  return $ tpls ++ concat rs

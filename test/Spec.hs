@@ -8,24 +8,34 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 
 
-import           Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
-import           Control.Exception       (Exception, throw, try)
+--------------------------------------------------------------------------------
+import           Control.Concurrent.MVar  ( newEmptyMVar, putMVar, takeMVar )
+import           Control.Exception        ( Exception, throw, try )
 import           Lens.Micro
-import           Control.Monad           (when)
-import           Control.Monad.State     (StateT (..), evalStateT, get, modify,
-                                          runStateT)
+import           Control.Monad.State      ( StateT(..)
+                                          , evalStateT
+                                          , get
+                                          , modify
+                                          , runStateT
+                                          )
 import qualified Control.Monad.State     as S
-import           Control.Monad.Trans     (liftIO)
+import           Control.Monad.Trans      ( liftIO )
+import qualified Data.ByteString.Lazy    as LBytes
+import qualified Data.Aeson              as Aeson
 import qualified Data.Map                as M
-import           Data.Maybe              (fromMaybe)
-import           Data.Text               (Text)
+import           Data.Maybe               ( fromMaybe )
+import           Data.Text                ( Text )
 import qualified Data.Text               as T
+import qualified Data.Text.Encoding      as T
 import qualified Data.Text.Lazy          as LT
 import           Data.Typeable
-import           Examples
 import           Test.Hspec
 import qualified Test.Hspec.Core.Spec    as H
+--------------------------------------------------------------------------------
+import           Examples
 import           Web.Larceny
+--------------------------------------------------------------------------------
+
 
 infix  4 .=
 (.=) :: S.MonadState s m => ASetter s s a b -> b -> m ()
@@ -33,10 +43,12 @@ l .= b = modify (l .~ b)
 {-# INLINE (.=) #-}
 
 data LarcenyState =
-  LarcenyState { _lPath      :: [Text]
-               , _lSubs      :: Substitutions () IO
-               , _lLib       :: Library () IO
-               , _lOverrides :: Overrides }
+  LarcenyState
+    { _lPath      :: [Text]
+    , _lSubs      :: Substitutions () IO
+    , _lLib       :: Library () IO
+    , _lSettings  :: Settings IO
+    }
 
 lPath :: Lens' LarcenyState [Text]
 lPath = lens _lPath (\ls p -> ls { _lPath = p })
@@ -44,14 +56,26 @@ lSubs :: Lens' LarcenyState (Substitutions () IO)
 lSubs = lens _lSubs (\ls s -> ls { _lSubs = s })
 lLib :: Lens' LarcenyState (Library () IO)
 lLib = lens _lLib (\ls l -> ls { _lLib = l })
-lOverrides :: Lens' LarcenyState Overrides
-lOverrides = lens _lOverrides (\ls o -> ls { _lOverrides = o })
+lSettings :: Lens' LarcenyState (Settings IO)
+lSettings = lens _lSettings (\ls s -> ls { _lSettings = s })
 
-type LarcenyHspecM = StateT LarcenyHspecState IO
+
+lOverrides :: Overrides -> LarcenyHspecM ()
+lOverrides o = do
+  (LarcenyHspecState _ (LarcenyState _ _ _ settings)) <- S.get
+  hLarcenyState.lSettings .= settings { setOverrides = o }
+
+
+type LarcenyHspecM =
+  StateT LarcenyHspecState IO
+
 
 data LarcenyHspecState =
-  LarcenyHspecState { _hResult       :: H.Result
-                    , _hLarcenyState :: LarcenyState }
+  LarcenyHspecState
+    { _hResult       :: H.Result
+    , _hLarcenyState :: LarcenyState
+    }
+
 
 hResult :: Lens' LarcenyHspecState H.Result
 hResult = lens _hResult (\hs r -> hs { _hResult = r })
@@ -72,7 +96,7 @@ withLarceny :: SpecWith LarcenyHspecState
             -> Spec
 withLarceny spec' =
   let larcenyHspecState =
-        LarcenyHspecState (H.Result "" H.Success) (LarcenyState ["default"] mempty mempty mempty) in
+        LarcenyHspecState (H.Result "" H.Success) (LarcenyState ["default"] mempty mempty defaultSettings) in
   afterAll return $
     before (return larcenyHspecState) spec'
 
@@ -115,9 +139,24 @@ removeSpaces = T.replace " " ""
 
 renderM :: Text -> LarcenyHspecM Text
 renderM templateText = do
-  (LarcenyHspecState _ (LarcenyState p s l o)) <- S.get
-  let tpl = parseWithOverrides o (LT.fromStrict templateText)
-  liftIO $ evalStateT (runTemplate tpl p s l) ()
+  (LarcenyHspecState _ (LarcenyState p s l settings)) <- S.get
+  let tpl = parseWithSettings settings (LT.fromStrict templateText)
+  fmap toHtml $ liftIO $ evalStateT (runTemplate tpl p s l) ()
+
+renderJson :: Text -> LarcenyHspecM Text
+renderJson templateText = do
+  (LarcenyHspecState _ (LarcenyState p s l settings)) <- S.get
+  let tpl = parseWithSettings settings (LT.fromStrict templateText)
+  fmap (T.decodeUtf8 . LBytes.toStrict . Aeson.encode . toJson)
+    $ liftIO
+    $ evalStateT (runTemplate tpl p s l) ()
+
+
+shouldRenderJson :: Text -> Text -> LarcenyHspecM ()
+shouldRenderJson template output = do
+  rendered <- renderJson template
+  liftIO $ shouldBe rendered output
+
 
 shouldRenderM :: Text -> Text -> LarcenyHspecM ()
 shouldRenderM templateText output = do
@@ -151,7 +190,7 @@ shouldErrorM templateText p =
           Left e ->
             if p e then return H.Success
                    else return $ H.Failure Nothing $ H.Reason ("did not get expected exception: " <>
-                        exceptionType <> ", got this exeption instead: " <> show e)
+                        exceptionType <> ", got this exception instead: " <> show e)
       setResult result
   where exceptionType = (show . typeOf . instanceOf) p
         instanceOf :: Selector a -> a
@@ -163,6 +202,260 @@ main = spec
 spec :: IO ()
 spec = hspec $ do
   withLarceny $ do
+    describe "fragments" $ do
+      it "should bubble fragment to top" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ( "to1", textFill "Dolly" )
+            , ( "to2", textFill "World" )
+            , ( "to3", textFill "there" )
+            , ( "person1", fillChildrenWith $ subs [("name", textFill "Jane Doe")])
+            , ( "person2", fillChildrenWith $ subs [("name", textFill "John Doe")])
+            ]
+
+        "<main><h:fragment condition='True'><p>Hello <span><to1/></span></p></h:fragment>\
+        \<p>Hey <span><to2/></span></p>\
+        \<p>Hi <span><to3/></span></p></main>"
+          `shouldRenderM` "<p>Hello <span>Dolly</span></p>"
+
+        "<main><p>Hello <span><to1/></span></p>\
+        \<h:fragment condition='True'><p>Hey <span><to2/></span></p></h:fragment>\
+        \<p>Hi <span><to3/></span></p></main>"
+          `shouldRenderM` "<p>Hey <span>World</span></p>"
+
+        "<main><p>Hello <span><to1/></span></p>\
+        \<p>Hey <span><to2/></span></p>\
+        \<h:fragment condition='True'><p>Hi <span><to3/></span></p></h:fragment></main>"
+          `shouldRenderM` "<p>Hi <span>there</span></p>"
+
+        "<main><p>Hello <h:fragment condition='True'><span><to1/></span></h:fragment></p>\
+        \<p>Hey <span><to2/></span></p>\
+        \<p>Hi <span><to3/></span></p></main>"
+          `shouldRenderM` "<span>Dolly</span>"
+
+        "<main><p>Hello <span><to1/></span></p>\
+        \<p>Hey <h:fragment condition='True'><span><to2/></span></h:fragment></p>\
+        \<p>Hi <span><to3/></span></p></main>"
+          `shouldRenderM` "<span>World</span>"
+
+        "<main><p>Hello <span><to1/></span></p>\
+        \<p>Hey <span><to2/></span></p>\
+        \<p>Hi <h:fragment condition='True'><span><to3/></span></h:fragment></p></main>"
+          `shouldRenderM` "<span>there</span>"
+
+        "<main><div><p>Ok... </p><person1><h:fragment condition='True'><p>Hi, <name/></p></h:fragment></person1></div>\
+        \<div><p>Ok... </p><person2><p>Hi, <name/></p></person2></div></main>"
+          `shouldRenderM` "<p>Hi, Jane Doe</p>"
+
+        "<main><div><p>Ok... </p><person1><p>Hi, <name/></p></person1></div>\
+        \<div><p>Ok... </p><person2><h:fragment condition='True'><p>Hi, <name/></p></h:fragment></person2></div></main>"
+          `shouldRenderM` "<p>Hi, John Doe</p>"
+
+      it "should use match to set fragment" $ do
+        let
+          tpl =
+            "<main><h:fragment key='dolly' match='${frag}'><p>Hello <span>Dolly</span></p></h:fragment>\
+            \<h:fragment key='world' match='${frag}'><p>Hey <span>World</span></p></h:fragment>\
+            \<h:fragment key='there' match='${frag}'><p>Hi <span>there</span></p></h:fragment></main>"
+
+        hLarcenyState.lSubs .= subs [("frag", textFill "dolly")]
+        tpl `shouldRenderM` "<p>Hello <span>Dolly</span></p>"
+
+        hLarcenyState.lSubs .= subs [("frag", textFill "world")]
+        tpl `shouldRenderM` "<p>Hey <span>World</span></p>"
+
+        hLarcenyState.lSubs .= subs [("frag", textFill "there")]
+        tpl `shouldRenderM` "<p>Hi <span>there</span></p>"
+
+      it "should not run actions for nodes that are not rendered" $ do
+        let
+          tplSubs =
+            subs
+              [ ( "who"
+                , Fill $
+                    \_ _ _ -> do
+                      modify (+1)
+                      return $ TextOutput "world"
+                )
+              , ( "count"
+                , Fill $
+                    \_ _ _ -> do
+                      n <- get
+                      return $ TextOutput (T.pack $ show n)
+                )
+              ]
+
+          tpl =
+            "<main><p>Hi <who/> (<count/>)</p>\
+            \<h:fragment condition='True'><p>Hey <who/> (<count/>)</p></h:fragment>\
+            \<p>Hello <who/> (<count/>)</p></main>"
+
+          runTpl =
+            runTemplate (parse tpl) ["default"] tplSubs mempty :: StateT Int IO Output
+
+        (output, n) <- liftIO $ runStateT runTpl 0
+        let txt = toHtml output
+        liftIO $ txt `shouldBe` "<p>Hey world (2)</p>"
+        liftIO $ n `shouldBe` 2
+        setResult H.Success
+
+    describe "json" $ do
+      it "should render values" $ do
+        "<j:value bool='True'/>" `shouldRenderJson` "true"
+        "<j:value bool='4' j:def='False'/>" `shouldRenderJson` "false"
+        "<j:value bool='4'/>" `shouldRenderJson` "null"
+
+        "<j:value number='21'/>" `shouldRenderJson` "21"
+        "<j:value number='Hello' j:def='0'/>" `shouldRenderJson` "0"
+        "<j:value number='Hello'/>" `shouldRenderJson` "null"
+
+        "<j:value string='Hello'/>" `shouldRenderJson` "\"Hello\""
+        "<j:value string=''/>" `shouldRenderJson` "\"\""
+
+        "<j:value field='True'/>" `shouldRenderJson` "true"
+        "<j:value field='21'/>" `shouldRenderJson` "21"
+        "<j:value field='Hello'/>" `shouldRenderJson` "\"Hello\""
+        "<j:value field=''/>" `shouldRenderJson` "\"\""
+        "<j:value field='null'/>" `shouldRenderJson` "null"
+
+      it "should render values with fills" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ( "nums"
+              , fillChildrenWith $ subs [("good", textFill "1"), ("bad", textFill "NaN")]
+              )
+            , ( "bools"
+              , fillChildrenWith $ subs [("good", textFill "True"), ("bad", textFill "No")]
+              )
+            , ( "names"
+              , fillChildrenWith $ subs [("hello", textFill "Dolly"), ("hi", textFill "World")]
+              )
+            ]
+
+        "<bools><j:value bool='${good}'/></bools>" `shouldRenderJson` "true"
+        "<bools><j:value bool='${bad}' j:def='False'/></bools>" `shouldRenderJson` "false"
+        "<bools><j:value bool='${bad}'/></bools>" `shouldRenderJson` "null"
+
+        "<nums><j:value number='${good}'/></nums>" `shouldRenderJson` "1"
+        "<nums><j:value number='${bad}' j:def='0'/></nums>" `shouldRenderJson` "0"
+        "<nums><j:value number='${bad}'/></nums>" `shouldRenderJson` "null"
+
+        "<names><j:value string='${hello}'/></names>" `shouldRenderJson` "\"Dolly\""
+        "<names><j:value string='${hi}'/></names>" `shouldRenderJson` "\"World\""
+
+      it "should render objects" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ( "person-a"
+              , fillChildrenWith $
+                  subs
+                    [ ("name", textFill "Jane Doe")
+                    , ("age", textFill "28")
+                    , ("employed", textFill "True")
+                    , ("cat", fillChildrenWith $ subs [("name", textFill "Fluffer"), ("age", textFill "7")])
+                    ]
+              )
+            , ( "person-b"
+              , fillChildrenWith $
+                  subs
+                    [ ("name", textFill "John Doe")
+                    , ("age", textFill "26")
+                    , ("employed", textFill "False")
+                    ]
+              )
+            ]
+
+        "<j:object><person-a><j:string name='${name}'/><j:number age='${age}'/><j:bool employed='${employed}'/></person-a></j:object>"
+          `shouldRenderJson` "{\"age\":28,\"employed\":true,\"name\":\"Jane Doe\"}"
+
+        "<person-b><j:object><j:string name='${name}'/><j:number age='${age}'/><j:bool employed='${employed}'/></j:object></person-b>"
+          `shouldRenderJson` "{\"age\":26,\"employed\":false,\"name\":\"John Doe\"}"
+
+        "<person-a><j:object><j:string name='${name}'/><j:object pet><cat><j:string name='${name}'/><j:string age='${age}'/></cat></j:object></j:object></person-a>"
+          `shouldRenderJson` "{\"name\":\"Jane Doe\",\"pet\":{\"age\":\"7\",\"name\":\"Fluffer\"}}"
+
+      it "should render object with embeded json" $ do
+        "<j:object><j:string name='Jane Doe'/><j:object pet='{\"age\":\"7\",\"name\":\"Fluffer\"}'/></j:object>"
+          `shouldRenderJson` "{\"name\":\"Jane Doe\",\"pet\":{\"age\":\"7\",\"name\":\"Fluffer\"}}"
+
+      it "should render arrays" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ( "persons"
+              , mapSubs
+                  ( \(name, age, pets) ->
+                      subs
+                        [ ("name", textFill name)
+                        , ("age", textFill age)
+                        , ("pets", mapSubs (\(name', age') -> subs [("name", textFill name'), ("age", textFill age')]) pets)
+                        ]
+                  )
+                  [ ("Jane Doe", "28", [("Fluffer", "7"), ("Barks", "5")])
+                  , ("John Doe", "35", [("Chuck", "9")])
+                  ]
+              )
+            ]
+
+        "<j:value number='1'/><j:value number='3'/><j:value number='5'/>"
+          `shouldRenderJson` "[1,3,5]"
+
+        "<j:object><j:field val='1'/></j:object><j:object><j:field val='2'/></j:object>"
+          `shouldRenderJson` "[{\"val\":1},{\"val\":2}]"
+
+        "<persons><j:object><j:string name='${name}'/><j:number age='${age}'/><j:array pets><pets><j:object><j:string name='${name}'/><j:number age='${age}'/></j:object></pets></j:array></j:object></persons>"
+          `shouldRenderJson` "[{\"age\":28,\"name\":\"Jane Doe\",\"pets\":[{\"age\":7,\"name\":\"Fluffer\"},{\"age\":5,\"name\":\"Barks\"}]},{\"age\":35,\"name\":\"John Doe\",\"pets\":[{\"age\":9,\"name\":\"Chuck\"}]}]"
+
+    describe "white space" $ do
+      it "should remove spaces next to line breaks" $ do
+        txt1 <-
+          renderM
+            "  <p>              \
+            \\n    Hello,       \
+            \\n    Dolly.       \
+            \\n    Hello, World \
+            \\n</p>             "
+
+        txt2 <-
+          renderM
+            "  <p>Hello,        \
+            \\n    Dolly.       \
+            \\n    Hello, World \
+            \\n</p>             "
+
+        liftIO $ txt1 `shouldBe` "<p>Hello, Dolly. Hello, World</p>"
+        liftIO $ txt1 `shouldBe` txt2
+
+      it "should reduce white space on lines to just one space" $ do
+        txt <-
+          renderM
+            "   <p>   Hello,  Dolly.    Hi!!!   </p> \
+            \\n <p>                                  \
+            \\n    Hello,        World.    Hey!      \
+            \\n</p>                                  "
+
+        liftIO $ txt `shouldBe` "<p> Hello, Dolly. Hi!!! </p><p>Hello, World. Hey!</p>"
+
+      it "should not remove white space from <pre> tags" $ do
+        txt <-
+          renderM
+            "   <p>   Hello,  Dolly.    Hi!!!   </p> \
+            \\n <pre>                                \
+            \\n    Here be    Javacript...           \
+            \\n    function() { console.log('Yay')}; \
+            \\n                                      \
+            \\n</pre>                                \
+            \\n<div>Back to normal</div>"
+
+        liftIO $
+          txt `shouldBe`
+            "<p> Hello, Dolly. Hi!!! </p>\
+            \<pre>                                \
+            \\n    Here be    Javacript...           \
+            \\n    function() { console.log('Yay')}; \
+            \\n                                      \
+            \\n</pre>\
+            \<div>Back to normal</div>"
+
     describe "parse" $ do
       it "should parse HTML into a Template" $ do
         hLarcenyState.lSubs .= subst
@@ -184,32 +477,26 @@ spec = hspec $ do
             subs
               [ ( "who"
                 , Fill $
-                    \_m tpl lib -> do
+                    \_ _ _ -> do
                       modify (+1)
-                      unFill (textFill "world") _m tpl lib
+                      return $ TextOutput "world"
                 )
               , ( "count"
                 , Fill $
-                    \_m tpl lib -> do
+                    \_ _ _ -> do
                       n <- get
-                      unFill (textFill (T.pack $ show n)) _m tpl lib
+                      return $ TextOutput (T.pack $ show n)
                 )
               ]
 
-          myTpl = runTemplate (parse "<p>hello <who/> (<count/>)</p>") ["default"] mySubs mempty :: StateT Int IO Text
+          myTpl =
+            runTemplate (parse "<p>hello <who/> (<count/>)</p>") ["default"] mySubs mempty :: StateT Int IO Output
 
-        (txt, n) <- liftIO $ runStateT myTpl 1
+        (output, n) <- liftIO $ runStateT myTpl 1
+        let txt = toHtml output
 
-        when (txt /= "<p>hello world (2)</p>")
-          $ setResult
-          $ H.Failure Nothing
-          $ H.Reason
-          $ "Expected <p>hello world (2)</p> but got " <> T.unpack txt
-
-        when (n /= 2)
-          $ setResult
-          $ H.Failure Nothing $ H.Reason $ "Expected 2 but got " <> show n
-
+        liftIO $ txt `shouldBe` "<p>hello world (2)</p>"
+        liftIO $ n `shouldBe` 2
         setResult H.Success
 
     describe "xml" $ do
@@ -291,23 +578,23 @@ spec = hspec $ do
     describe "overriding HTML tags" $ do
       it "should allow overriden Html tags" $ do
         hLarcenyState.lSubs .= subs [("div", textFill "notadivatall")]
-        hLarcenyState.lOverrides .= Overrides mempty ["div"] mempty
+        lOverrides $ Overrides mempty ["div"] mempty
         "<html><div></div></html>" `shouldRenderM` "<html>not a div at all</html>"
 
       it "should allow (nested) overriden Html tags" $ do
         hLarcenyState.lSubs .= subs [("div", textFill "notadivatall")
                                     ,("custom", fillChildrenWith mempty)]
-        hLarcenyState.lOverrides .= Overrides mempty ["div"] mempty
+        lOverrides $ Overrides mempty ["div"] mempty
         "<html><custom><div></div></custom></html>"
           `shouldRenderM` "<html>not a div at all</html>"
 
       it "should not need fills for manually added plain nodes" $ do
-        hLarcenyState.lOverrides .= Overrides ["blink"] mempty mempty
+        lOverrides $ Overrides ["blink"] mempty mempty
         "<html><blink>retro!!</blink></html>"
           `shouldRenderM` "<html><blink>retro!!</blink></html>"
 
       it "should allow custom self-closing tags" $ do
-        hLarcenyState.lOverrides .= Overrides ["blink"] mempty ["blink"]
+        lOverrides $ Overrides ["blink"] mempty ["blink"]
         "<blink />" `shouldRenderM` "<blink />"
 
     describe "bind" $ do
@@ -365,7 +652,7 @@ spec = hspec $ do
       it "should allow you to write functions for fills" $ do
         let subs' =
               subs [("desc",
-                     Fill $ \m _t _l -> return $ T.take (read $ T.unpack (m M.! "length"))
+                     Fill $ \m _t _l -> return $ TextOutput $ T.take (read $ T.unpack (m M.! "length"))
                                         "A really long description"
                                         <> "...")]
         hLarcenyState.lSubs .= subs'
@@ -375,7 +662,7 @@ spec = hspec $ do
         let subs' =
               subs [("desc", Fill $
                           \m _t _l -> do liftIO $ putStrLn "***********\nHello World\n***********"
-                                         return $ T.take (read $ T.unpack (m M.! "length"))
+                                         return $ TextOutput $ T.take (read $ T.unpack (m M.! "length"))
                                            "A really long description"
                                            <> "...")]
         hLarcenyState.lSubs .= subs'
@@ -453,7 +740,7 @@ spec = hspec $ do
            `shouldRenderM` "<p class=\"lots of space\"></p>"
 
       it "should know what the template path is" $ do
-        let fill = Fill $ \_ (p, _) _ -> return (head p)
+        let fill = Fill $ \_ (p, _) _ -> return $ TextOutput (head p)
         hLarcenyState.lSubs .= subs [("template", fill)]
         "<p class=\"${template}\"></p>"
           `shouldRenderM` "<p class=\"default\"></p>"
@@ -482,7 +769,7 @@ spec = hspec $ do
         "<br />" `shouldRenderM` "<br />"
 
     describe "quotes" $ do
-      fit "should handle single quote attributes" $ do
+      it "should handle single quote attributes" $ do
         hLarcenyState.lSubs .=
           subs [("obj", rawTextFill "{\"A\": \"B\"}")]
         "<div json='{\"A\": \"B\"}'>todo</div>"
@@ -504,7 +791,7 @@ spec = hspec $ do
     fallbackTests
     attrTests
     doctypeTests
-    conditionalTests
+    conditionTests
     namespaceTests
   statefulTests
 
@@ -535,7 +822,7 @@ statefulTests =
                     (subs [("x", Fill $ \_ _ _ ->
                                    do modify ((+1) :: Int -> Int)
                                       s <- get
-                                      return (T.pack (show s)))])
+                                      return $ TextOutput (T.pack (show s)))])
                     0
                     ["default"]
          `shouldReturn` Just "12"
@@ -553,7 +840,7 @@ statefulTests =
                     (subs [("x", Fill $ \_ _ _ ->
                                    do modify ((+1) :: Int -> Int)
                                       s <- get
-                                      return (T.pack (show s)))])
+                                      return $ TextOutput (T.pack (show s)))])
                     0
                     ["default"]
          `shouldReturn` Just "12"
@@ -569,9 +856,9 @@ doctypeTests = do
       "<!DOCTYPE html><html><p>Hello world</p></html>"
       `shouldRenderM` "<!DOCTYPE html><html><p>Hello world</p></html>"
 
-conditionalTests :: SpecWith LarcenyHspecState
-conditionalTests = do
-  describe "conditionals" $ do
+conditionTests :: SpecWith LarcenyHspecState
+conditionTests = do
+  describe "conditions" $ do
     let template cond =
           "<if condition=\"" <> cond <> "\">\
           \  <then>It's true!</then>\
@@ -722,7 +1009,7 @@ attrTests =
               useAttrs (a"length")
                        (\n -> Fill $ \_attrs (_pth, tpl) _l -> liftIO $ do
                            t' <- evalStateT (runTemplate tpl ["default"] mempty mempty) ()
-                           return $ T.take n t' <> "...")
+                           return $ TextOutput $ T.take n (toText t') <> "...")
         hLarcenyState.lSubs .= subs [ ("adverb", textFill "really")
                                     , ("desc", descTplFill)]
         "<l:desc length=\"10\">A <adverb /> long description</desc>"
@@ -762,6 +1049,6 @@ attrTests =
           do let ending = fromMaybe "..."  e
              \_attrs (_pth, tpl) _l -> liftIO $ do
                renderedText <- evalStateT (runTemplate tpl ["default"] mempty mempty) ()
-               return $ T.take n renderedText <> ending
+               return $ TextOutput $ T.take n (toText renderedText) <> ending
 
 {-# ANN module ("HLint: ignore Redundant do" :: String) #-}
