@@ -37,11 +37,7 @@ import           Web.Larceny.Types         ( Attributes, Output(..) )
 
 toHtml :: Output -> Text
 toHtml output =
-  T.replace "=\"{" "='{"
-    $ T.replace "}\"" "}'"
-    $ T.replace "=\"[" "='["
-    $ T.replace "]\"" "]'"
-    $ T.replace "=\"\"" ""
+  T.replace "=\"\"" ""
     $ LT.toStrict
     $ Blaze.renderMarkup
     $ toMarkup output
