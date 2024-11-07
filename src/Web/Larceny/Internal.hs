@@ -7,7 +7,7 @@ module Web.Larceny.Internal ( findTemplate
 import           Control.Exception
 import           Lens.Micro
 import           Control.Monad.Trans (liftIO)
-import           Control.Monad.State (MonadState, StateT, evalStateT, runStateT, get, modify)
+import           Control.Monad.State (MonadState, StateT, evalStateT, runStateT, get, put, modify)
 import qualified Data.HashSet        as HS
 import qualified Data.Map            as M
 import           Data.Maybe          (fromMaybe)
@@ -111,7 +111,9 @@ toProcessState f =
 toUserState :: ProcessContext s -> StateT (ProcessContext s) IO a -> StateT s IO a
 toUserState pc f =
   do s <- get
-     liftIO $ evalStateT f (pc { _pcState = s })
+     (result, pc') <- liftIO $ runStateT f (pc { _pcState = s })
+     put (_pcState pc')
+     return result
 
 fillIn :: Blank -> Substitutions s -> Fill s
 fillIn tn m = fromMaybe (fallbackFill tn m) (M.lookup tn m)
@@ -172,8 +174,6 @@ process (currentNode:nextNodes) = do
           return [t]
       NodeComment c ->
           return ["<!--" <> c <> "-->"]
-      _ ->
-          return []
   restOfNodes <- process nextNodes
   return $ processedNode ++ restOfNodes
 
