@@ -33,7 +33,7 @@ import           Test.Hspec
 import qualified Test.Hspec.Core.Spec    as H
 --------------------------------------------------------------------------------
 import           Examples
-import           Web.Larceny
+import           Web.Larceny       hiding ( Spec )
 --------------------------------------------------------------------------------
 
 
@@ -272,13 +272,13 @@ spec = hspec $ do
           tplSubs =
             subs
               [ ( "who"
-                , Fill $
+                , Fill mempty $
                     \_ _ _ -> do
                       modify (+1)
                       return $ TextOutput "world"
                 )
               , ( "count"
-                , Fill $
+                , Fill mempty $
                     \_ _ _ -> do
                       n <- get
                       return $ TextOutput (T.pack $ show n)
@@ -476,13 +476,13 @@ spec = hspec $ do
           mySubs =
             subs
               [ ( "who"
-                , Fill $
+                , Fill mempty $
                     \_ _ _ -> do
                       modify (+1)
                       return $ TextOutput "world"
                 )
               , ( "count"
-                , Fill $
+                , Fill mempty $
                     \_ _ _ -> do
                       n <- get
                       return $ TextOutput (T.pack $ show n)
@@ -624,7 +624,7 @@ spec = hspec $ do
          \</apply>" `shouldRenderM` "Fill this in Fill this in"
 
       it "should not let binds escape the apply-content tag" $ do
-        hLarcenyState.lSubs .= fallbackSub (Fill $ \_ _ _ -> throw $ SomeError "not found!")
+        hLarcenyState.lSubs .= fallbackSub (Fill mempty $ \_ _ _ -> throw $ SomeError "not found!")
         let lib = M.fromList [(["blah"], parse "<apply-content /><foo />")]
         hLarcenyState.lLib .= lib
         "<apply template=\"blah\"> \
@@ -652,7 +652,7 @@ spec = hspec $ do
       it "should allow you to write functions for fills" $ do
         let subs' =
               subs [("desc",
-                     Fill $ \m _t _l -> return $ TextOutput $ T.take (read $ T.unpack (m M.! "length"))
+                     Fill mempty $ \m _t _l -> return $ TextOutput $ T.take (read $ T.unpack (m M.! "length"))
                                         "A really long description"
                                         <> "...")]
         hLarcenyState.lSubs .= subs'
@@ -660,7 +660,7 @@ spec = hspec $ do
 
       it "should allow you to use IO in fills" $ do
         let subs' =
-              subs [("desc", Fill $
+              subs [("desc", Fill mempty $
                           \m _t _l -> do liftIO $ putStrLn "***********\nHello World\n***********"
                                          return $ TextOutput $ T.take (read $ T.unpack (m M.! "length"))
                                            "A really long description"
@@ -740,7 +740,7 @@ spec = hspec $ do
            `shouldRenderM` "<p class=\"lots of space\"></p>"
 
       it "should know what the template path is" $ do
-        let fill = Fill $ \_ (p, _) _ -> return $ TextOutput (head p)
+        let fill = Fill mempty $ \_ (p, _) _ -> return $ TextOutput (head p)
         hLarcenyState.lSubs .= subs [("template", fill)]
         "<p class=\"${template}\"></p>"
           `shouldRenderM` "<p class=\"default\"></p>"
@@ -810,7 +810,7 @@ statefulTests =
   describe "statefulness" $ do
       it "a fill should be able to affect subsequent fills" $ do
          renderWith (M.fromList [(["default"], parse "<x/><x/>")])
-                    (subs [("x", Fill $ \_ _ _ ->
+                    (subs [("x", Fill mempty $ \_ _ _ ->
                                    do modify ((+1) :: Int -> Int)
                                       s <- get
                                       return $ TextOutput (T.pack (show s)))])
@@ -828,7 +828,7 @@ statefulTests =
                  \<bind tag=\"test2\">test2</bind>\
                  \<x/><x/>"
        renderWith (M.fromList [(["default"], parse tpl)])
-                    (subs [("x", Fill $ \_ _ _ ->
+                    (subs [("x", Fill mempty $ \_ _ _ ->
                                    do modify ((+1) :: Int -> Int)
                                       s <- get
                                       return $ TextOutput (T.pack (show s)))])
@@ -974,7 +974,7 @@ fallbackTests = do
       hLarcenyState.lSubs .= fallbackSub (rawTextFill "I'm a fallback.")
       "<p>missing: <missing /></p>" `shouldRenderM` "<p>missing: I'm a fallback.</p>"
     it "should allow errors to be thrown, e.g., in dev mode" $ do
-        hLarcenyState.lSubs .= fallbackSub (Fill $ \_ _ _ -> throw $ SomeError "missing blank!")
+        hLarcenyState.lSubs .= fallbackSub (Fill mempty $ \_ _ _ -> throw $ SomeError "missing blank!")
         "<p>missing: <missing /></p>" `shouldErrorM` (== (SomeError "missing blank!"))
 
 attrTests :: SpecWith LarcenyHspecState
@@ -998,7 +998,7 @@ attrTests =
       it "should allow you use child elements" $ do
         let descTplFill =
               useAttrs (a"length")
-                       (\n -> Fill $ \_attrs (_pth, tpl) _l -> liftIO $ do
+                       (\n -> Fill mempty $ \_attrs (_pth, tpl) _l -> liftIO $ do
                            t' <- evalStateT (runTemplate tpl ["default"] mempty mempty) ()
                            return $ TextOutput $ T.take n (toText t') <> "...")
         hLarcenyState.lSubs .= subs [ ("adverb", textFill "really")
@@ -1036,7 +1036,7 @@ attrTests =
           useAttrs (a"length" % a"ending") descFunc
 
         descFunc :: Int -> Maybe Text -> Fill () IO
-        descFunc n e = Fill $
+        descFunc n e = Fill mempty $
           do let ending = fromMaybe "..."  e
              \_attrs (_pth, tpl) _l -> liftIO $ do
                renderedText <- evalStateT (runTemplate tpl ["default"] mempty mempty) ()

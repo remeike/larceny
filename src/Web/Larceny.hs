@@ -95,6 +95,12 @@ module Web.Larceny
   , toXml
   , toJson
   , toText
+  , Spec(..)
+  , SpecFill(..)
+  , SpecRef(..)
+  , SpecEg(..)
+  , toSpecs
+  , setSpecs
   ) where
 
 --------------------------------------------------------------------------------

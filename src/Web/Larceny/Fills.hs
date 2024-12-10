@@ -21,6 +21,8 @@ module Web.Larceny.Fills
   , useAttrs
   , a
   , (%)
+  , toSpecs
+  , setSpecs
   ) where
 
 --------------------------------------------------------------------------------
@@ -29,6 +31,7 @@ import           Control.Monad.State  ( StateT )
 import qualified Data.Map            as M
 import           Data.Maybe           ( fromMaybe )
 import           Data.Text            ( Text )
+import           Data.Typeable        ( Typeable )
 import qualified HTMLEntities.Text   as HE
 --------------------------------------------------------------------------------
 import           Web.Larceny.Types
@@ -111,7 +114,7 @@ outputFill t = outputFill' (return t)
 -- textFill' getTextFromDatabase
 -- @
 textFill' :: Monad m => StateT s m Text -> Fill s m
-textFill' t = Fill $ \_m _t _l -> TextOutput . HE.text <$> t
+textFill' t = Fill mempty $ \_m _t _l -> TextOutput . HE.text <$> t
 
 -- | Use state or IO, then fill in some text.
 --
@@ -120,26 +123,26 @@ textFill' t = Fill $ \_m _t _l -> TextOutput . HE.text <$> t
 -- textFill' getTextFromDatabase
 -- @
 rawTextFill' :: Monad m => StateT s m Text -> Fill s m
-rawTextFill' t = Fill $ \_m _t _l -> fmap RawTextOutput t
+rawTextFill' t = Fill mempty $ \_m _t _l -> fmap RawTextOutput t
 
 -- | TODO
 outputFill' :: Monad m => StateT s m Output -> Fill s m
-outputFill' t = Fill $ \_m _t _l -> t
+outputFill' t = Fill mempty $ \_m _t _l -> t
 
 -- | TODO
 leafFill :: Monad m => Text -> Fill s m
 leafFill name =
-  Fill $ \attrs _ _ -> return $ LeafOutput name attrs
+  Fill mempty $ \attrs _ _ -> return $ LeafOutput name attrs
 
 -- | TODO
 voidFill :: Monad m => Fill s m
 voidFill =
-  Fill $ \_ _ _ -> return $ VoidOutput
+  Fill mempty $ \_ _ _ -> return $ VoidOutput
 
 -- | TODO
 commentFill :: Monad m => Text -> Fill s m
 commentFill comment =
-  Fill $ \_ _ _ -> return $ CommentOutput comment
+  Fill mempty $ \_ _ _ -> return $ CommentOutput comment
 
 -- | Create substitutions for each element in a list and fill the child nodes
 -- with those substitutions.
@@ -151,17 +154,17 @@ commentFill comment =
 -- @
 --
 -- > Bonnie Thunders Donna Matrix Beyonslay
-mapSubs :: Monad m
+mapSubs :: Monad m => Typeable a
         => (a -> Substitutions s m)
         -> [a]
         -> Fill s m
-mapSubs f xs = Fill $ \_attrs (pth, tpl) lib ->
+mapSubs f xs = Fill mempty $ \_attrs (pth, tpl) lib ->
   ListOutput <$> mapM (\n -> runTemplate tpl pth (f n) lib) xs
 
 -- | Create substitutions for each element in a list (using IO/state if
 -- needed) and fill the child nodes with those substitutions.
 mapSubs' :: Monad m => (a -> StateT s m (Substitutions s m)) -> [a] -> Fill s m
-mapSubs' f xs = Fill $
+mapSubs' f xs = Fill mempty $
   \_m (pth, tpl) lib ->
     ListOutput <$> mapM (\x -> do
                            s' <- f x
@@ -213,8 +216,10 @@ fillChildrenWith' m = maybeFillChildrenWith' (Just <$> m)
 -- > Bonnie Thunders
 maybeFillChildrenWith :: Monad m => Maybe (Substitutions s m) -> Fill s m
 maybeFillChildrenWith Nothing = textFill ""
-maybeFillChildrenWith (Just s) = Fill $ \_s (pth, Template tpl) l ->
-  tpl pth s l
+maybeFillChildrenWith (Just s) =
+  Fill
+    ( toSpecs s )
+    ( \_s (pth, Template tpl) l -> tpl pth s l )
 
 -- | Use state and IO and maybe fill in with some substitutions.
 --
@@ -229,7 +234,7 @@ maybeFillChildrenWith (Just s) = Fill $ \_s (pth, Template tpl) l ->
 --
 -- > Bonnie Thunders
 maybeFillChildrenWith' :: Monad m => StateT s m (Maybe (Substitutions s m)) -> Fill s m
-maybeFillChildrenWith' sMSubs = Fill $ \_s (pth, Template tpl) l -> do
+maybeFillChildrenWith' sMSubs = Fill mempty $ \_s (pth, Template tpl) l -> do
   mSubs <- sMSubs
   case mSubs of
     Nothing -> return $ TextOutput ""
@@ -255,7 +260,7 @@ useAttrs :: Monad m
          => (Attributes -> k -> Fill s m)
          ->  k
          ->  Fill s m
-useAttrs k fill= Fill $ \atrs (pth, tpl) lib ->
+useAttrs k fill = Fill mempty $ \atrs (pth, tpl) lib ->
   unFill (k atrs fill) atrs (pth, tpl) lib
 
 -- | Prepend `a` to the name of an attribute to pass the value of that
@@ -286,3 +291,22 @@ a attrName attrs k =
     -> (Attributes -> b -> c)
     ->  Attributes -> a -> c
 (%) f1 f2 attrs k = f2 attrs (f1 attrs k)
+
+
+--
+
+
+toSpecs :: Substitutions s m -> [Spec]
+toSpecs s =
+  foldMap
+    ( \(k, Fill ls _) ->
+        case k of
+          Blank key     -> [NodeSpec key ls]
+          FallbackBlank -> []
+    )
+    ( M.toList s )
+
+
+setSpecs :: [Spec] -> Fill s m -> Fill s m
+setSpecs ls (Fill _ f) =
+  Fill ls f

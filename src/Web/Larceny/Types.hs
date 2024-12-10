@@ -19,6 +19,10 @@ module Web.Larceny.Types
   , Settings(..)
   , defaultSettings
   , Output(..)
+  , Spec(..)
+  , SpecFill(..)
+  , SpecRef(..)
+  , SpecEg(..)
   ) where
 
 --------------------------------------------------------------------------------
@@ -75,10 +79,11 @@ instance Hashable Blank where
 -- Text` in case you need templates to depend on IO actions (like
 -- looking something up in a database) or store state (perhaps keeping
 -- track of what's already been rendered).
-newtype Fill s m = Fill { unFill :: Attributes
-                               -> (Path, Template s m)
-                               -> Library s m
-                               -> StateT s m Output }
+data Fill s m =
+  Fill
+    { specs  :: [Spec]
+    , unFill :: Attributes -> (Path, Template s m) -> Library s m -> StateT s m Output
+    }
 
 -- | The Blank's attributes, a map from the attribute name to
 -- it's value.
@@ -251,3 +256,31 @@ data Output
   | VoidOutput
   | FragmentOutput [Output]
   deriving (Eq, Show)
+
+
+data Spec
+  = NodeSpec Text [Spec]
+  | LeafSpec Text (Maybe SpecRef) [SpecEg]
+  | CondSpec Text [SpecFill]
+  | MultSpec Text [(Text, [Spec])]
+  | VoidSpec Text
+  | RefSpec  SpecRef
+  deriving (Eq, Show)
+
+
+data SpecFill =
+  SpecFill [(Text, Text)] [Spec]
+  deriving (Eq, Show)
+
+
+newtype SpecRef =
+  SpecRef Text
+  deriving (Eq, Show)
+
+
+data SpecEg =
+  SpecEg
+    { specAttrs  :: [(Text, Text)]
+    , specMeta   :: Maybe Text
+    , specOutput :: Text
+    } deriving (Eq, Show)

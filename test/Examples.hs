@@ -66,7 +66,7 @@ subst = subs [ ("site-title", textFill "Gotham Girls roster")
               shorten n t = T.take n (T.strip t) <> "..."
 
 modifyInnerText :: (Text -> Text) -> Fill () IO
-modifyInnerText f = Fill $
+modifyInnerText f = Fill mempty $
   \_attrs (_pth, tpl) _l ->
     liftIO $ do
       t' <- evalStateT (runTemplate tpl ["default"] mempty mempty) ()
