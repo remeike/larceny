@@ -13,7 +13,7 @@ import           Control.Exception
 import           Lens.Micro
 import           Control.Monad.Trans  ( lift )
 import           Control.Monad.State  ( MonadState, StateT, runStateT
-                                      , get, modify, put
+                                      , get, modify, put, evalStateT
                                       )
 import qualified Data.Char           as Char
 import qualified Data.HashSet        as HS
@@ -218,7 +218,7 @@ fallbackFill settings blank splices =
       fromMaybe (textFill "") $ M.lookup FallbackBlank splices
 
     Blank tn ->
-      Fill $ \attr (pth, tpl) lib ->
+      Fill mempty $ \attr (pth, tpl) lib ->
         let
           message =
             T.pack $
@@ -464,7 +464,7 @@ processBind settings atr kids = do
     newSubs =
       subs
         [ ( tagName
-          , Fill $ \_a _t _l -> runTemplate (mko kids) pth m l
+          , Fill mempty $ \_a _t _l -> runTemplate (mko kids) pth m l
           )
         ]
 
@@ -628,7 +628,7 @@ objectSplices =
 
 objectFill :: Monad m => Fill s m
 objectFill =
-  Fill $ \attrs (pth, tpl) lib -> do
+  Fill [] $ \attrs (pth, tpl) lib -> do
     ctxt <- get
     (op, ctxt') <- lift $ runStateT (runTemplate tpl pth objectSplices lib) ctxt
     put ctxt'
@@ -637,7 +637,7 @@ objectFill =
 
 arrayFill :: Monad m => Fill s m
 arrayFill =
-  Fill $ \attrs (pth, tpl) lib -> do
+  Fill [] $ \attrs (pth, tpl) lib -> do
     ctxt <- get
     (op, ctxt') <- lift $ runStateT (runTemplate tpl pth jsonSplices lib) ctxt
     put ctxt'
