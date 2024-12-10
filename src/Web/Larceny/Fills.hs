@@ -31,7 +31,6 @@ import           Control.Monad.State  ( StateT )
 import qualified Data.Map            as M
 import           Data.Maybe           ( fromMaybe )
 import           Data.Text            ( Text )
-import           Data.Typeable        ( Typeable )
 import qualified HTMLEntities.Text   as HE
 --------------------------------------------------------------------------------
 import           Web.Larceny.Types
@@ -154,7 +153,7 @@ commentFill comment =
 -- @
 --
 -- > Bonnie Thunders Donna Matrix Beyonslay
-mapSubs :: Monad m => Typeable a
+mapSubs :: Monad m
         => (a -> Substitutions s m)
         -> [a]
         -> Fill s m
