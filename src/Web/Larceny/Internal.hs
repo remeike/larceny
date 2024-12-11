@@ -13,7 +13,7 @@ import           Control.Exception
 import           Lens.Micro
 import           Control.Monad.Trans  ( lift )
 import           Control.Monad.State  ( MonadState, StateT, runStateT
-                                      , get, modify, put, evalStateT
+                                      , get, modify, put
                                       )
 import qualified Data.Char           as Char
 import qualified Data.HashSet        as HS

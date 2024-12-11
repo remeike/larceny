@@ -300,7 +300,7 @@ toSpecs s =
   foldMap
     ( \(k, Fill ls _) ->
         case k of
-          Blank key     -> [NodeSpec key ls]
+          Blank key     -> [NodeSpec key [] Nothing ls]
           FallbackBlank -> []
     )
     ( M.toList s )

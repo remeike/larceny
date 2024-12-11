@@ -20,9 +20,10 @@ module Web.Larceny.Types
   , defaultSettings
   , Output(..)
   , Spec(..)
-  , SpecFill(..)
+  , SpecVariant(..)
   , SpecRef(..)
-  , SpecEg(..)
+  , SpecExample(..)
+  , SpecRender(..)
   ) where
 
 --------------------------------------------------------------------------------
@@ -259,17 +260,21 @@ data Output
 
 
 data Spec
-  = NodeSpec Text [Spec]
-  | LeafSpec Text (Maybe SpecRef) [SpecEg]
-  | CondSpec Text [SpecFill]
-  | MultSpec Text [(Text, [Spec])]
-  | VoidSpec Text
+  = NodeSpec Text [SpecRef] Commentary [Spec]
+  | LeafSpec [SpecRef] [SpecExample]
+  | MultSpec [SpecRef] [SpecVariant]
+  | VoidSpec Commentary
+  | FillSpec Commentary
   | RefSpec  SpecRef
   deriving (Eq, Show)
 
 
-data SpecFill =
-  SpecFill [(Text, Text)] [Spec]
+type Commentary =
+  Maybe Text
+
+
+data SpecVariant =
+  SpecVariant [(Text, Text)] Commentary [Spec]
   deriving (Eq, Show)
 
 
@@ -278,9 +283,14 @@ newtype SpecRef =
   deriving (Eq, Show)
 
 
-data SpecEg =
-  SpecEg
-    { specAttrs  :: [(Text, Text)]
-    , specMeta   :: Maybe Text
-    , specOutput :: Text
+data SpecExample =
+  SpecExample
+    { specAttrs      :: [(Text, Text)]
+    , specCommentary :: Commentary
+    , specRender     :: Text
     } deriving (Eq, Show)
+
+
+data SpecRender
+  = RenderText Text
+  | RenderRef SpecRef
