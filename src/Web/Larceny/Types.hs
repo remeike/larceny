@@ -263,9 +263,9 @@ data Spec
   = NodeSpec Text [SpecRef] Commentary [Spec]
   | LeafSpec [SpecRef] [SpecExample]
   | MultSpec [SpecRef] [SpecVariant]
-  | VoidSpec Commentary
-  | FillSpec Commentary
-  | RefSpec  SpecRef
+  | VoidSpec
+  | FillSpec
+  | RefSpec SpecRef
   deriving (Eq, Show)
 
 
@@ -287,10 +287,11 @@ data SpecExample =
   SpecExample
     { specAttrs      :: [(Text, Text)]
     , specCommentary :: Commentary
-    , specRender     :: Text
+    , specRender     :: SpecRender
     } deriving (Eq, Show)
 
 
 data SpecRender
   = RenderText Text
   | RenderRef SpecRef
+  deriving (Eq, Show)
