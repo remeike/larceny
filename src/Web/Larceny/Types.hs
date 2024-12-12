@@ -23,7 +23,6 @@ module Web.Larceny.Types
   , SpecVariant(..)
   , SpecRef(..)
   , SpecExample(..)
-  , SpecRender(..)
   ) where
 
 --------------------------------------------------------------------------------
@@ -82,7 +81,7 @@ instance Hashable Blank where
 -- track of what's already been rendered).
 data Fill s m =
   Fill
-    { specs  :: [Spec]
+    { specs  :: [Spec s m]
     , unFill :: Attributes -> (Path, Template s m) -> Library s m -> StateT s m Output
     }
 
@@ -259,39 +258,44 @@ data Output
   deriving (Eq, Show)
 
 
-data Spec
-  = NodeSpec Text [SpecRef] Commentary [Spec]
-  | LeafSpec [SpecRef] [SpecExample]
-  | MultSpec [SpecRef] [SpecVariant]
-  | VoidSpec
-  | FillSpec
-  | RefSpec SpecRef
-  deriving (Eq, Show)
+--
+
+
+data Spec s m
+  = NodeSpec Text Commentary (Fill s m)
+  | LeafSpec [SpecRef] [SpecVariant s m]
+
+
+instance Show (Spec s m) where
+  show spec =
+    case spec of
+      NodeSpec key commentary _ ->
+        "NodeSpec " <> show key <> " " <> show commentary <> " Fill"
+
+      LeafSpec refs examples ->
+        "LeafSpec " <> show refs <> " " <> show examples
 
 
 type Commentary =
   Maybe Text
 
 
-data SpecVariant =
-  SpecVariant [(Text, Text)] Commentary [Spec]
+data SpecRef
+  = SpecRef Text
+  | SpecExt Text
   deriving (Eq, Show)
 
 
-newtype SpecRef =
-  SpecRef Text
-  deriving (Eq, Show)
+data SpecVariant s m =
+  SpecVariant
+    { varAttrs      :: [(Text, Text)]
+    , varCommentary :: Commentary
+    , varExample    :: Maybe SpecExample
+    , varBranching  :: [Spec s m]
+    } deriving Show
 
 
-data SpecExample =
-  SpecExample
-    { specAttrs      :: [(Text, Text)]
-    , specCommentary :: Commentary
-    , specRender     :: SpecRender
-    } deriving (Eq, Show)
-
-
-data SpecRender
-  = RenderText Text
-  | RenderRef SpecRef
+data SpecExample
+  = ExampleText Text
+  | ExampleRef SpecRef
   deriving (Eq, Show)

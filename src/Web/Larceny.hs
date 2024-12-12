@@ -99,7 +99,6 @@ module Web.Larceny
   , SpecVariant(..)
   , SpecRef(..)
   , SpecExample(..)
-  , SpecRender(..)
   , toSpecs
   , setSpecs
   ) where

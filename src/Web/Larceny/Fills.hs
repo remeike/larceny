@@ -295,17 +295,17 @@ a attrName attrs k =
 --
 
 
-toSpecs :: Substitutions s m -> [Spec]
+toSpecs :: Substitutions s m -> [Spec s m]
 toSpecs s =
   foldMap
-    ( \(k, Fill ls _) ->
+    ( \(k, fill) ->
         case k of
-          Blank key     -> [NodeSpec key [] Nothing ls]
+          Blank key     -> [NodeSpec key Nothing fill]
           FallbackBlank -> []
     )
     ( M.toList s )
 
 
-setSpecs :: [Spec] -> Fill s m -> Fill s m
+setSpecs :: [Spec s m] -> Fill s m -> Fill s m
 setSpecs ls (Fill _ f) =
   Fill ls f
