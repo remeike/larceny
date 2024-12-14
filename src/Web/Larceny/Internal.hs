@@ -51,7 +51,7 @@ parseWithSettings settings t =
       D.parseLT ("<div>" <> textWithoutDoctype <> "</div>")
 
     lnodes =
-      map (toLarcenyNode settings) nodes
+      map (toLarcenyNode settings) $ expandElements nodes
   in
   mk settings $! lnodes
 
@@ -642,3 +642,41 @@ arrayFill =
     (op, ctxt') <- lift $ runStateT (runTemplate tpl pth jsonSplices lib) ctxt
     put ctxt'
     return $ ElemOutput "j:array" attrs [op]
+
+
+expandElements :: [X.Node] -> [X.Node]
+expandElements =
+  fmap
+    ( \node ->
+        case node of
+          X.NodeElement (X.Element (X.Name name n p) attrs nodes) ->
+            let
+              tags =
+                case T.splitOn ":" name of
+                  pfx : l : ls | T.length pfx == 1 || pfx == "svg" ->
+                    (pfx <> ":" <> l) : ls
+
+                  ls ->
+                    ls
+            in
+            case tags of
+              name' : rest ->
+                X.NodeElement $ X.Element (X.Name name' n p) attrs $
+                  List.foldr
+                    ( \tag children ->
+                        [ X.NodeElement
+                            $ X.Element (X.Name tag Nothing Nothing) mempty
+                            $ children
+                        ]
+                    )
+                    ( expandElements nodes )
+                    rest
+
+              _ ->
+                X.NodeElement
+                  $ X.Element (X.Name name n p) attrs
+                  $ expandElements nodes
+
+          _ ->
+            node
+    )
