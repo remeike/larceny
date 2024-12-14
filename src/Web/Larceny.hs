@@ -87,6 +87,8 @@ module Web.Larceny
   , (%)
   , parse
   , parseWithSettings
+  , parseXml
+  , parseTemplate
   , Settings(..)
   , defaultSettings
   , Output(..)
@@ -98,15 +100,16 @@ module Web.Larceny
   ) where
 
 --------------------------------------------------------------------------------
-import           Control.Monad         ( filterM )
-import           Control.Monad.State   ( evalStateT )
-import qualified Data.Map             as M
-import           Data.Text             ( Text )
-import qualified Data.Text            as T
-import qualified Data.Text.IO         as ST
-import qualified Data.Text.Lazy       as LT
-import           System.Directory      ( doesDirectoryExist, listDirectory )
-import           System.FilePath       ( dropExtension, takeExtension )
+import           Control.Monad           ( filterM )
+import           Control.Monad.IO.Class  ( MonadIO(..) )
+import           Control.Monad.State     ( evalStateT )
+import qualified Data.Map               as M
+import           Data.Text               ( Text )
+import qualified Data.Text              as T
+import qualified Data.Text.IO           as ST
+import qualified Data.Text.Lazy         as LT
+import           System.Directory        ( doesDirectoryExist, listDirectory )
+import           System.FilePath         ( dropExtension, takeExtension )
 --------------------------------------------------------------------------------
 import           Web.Larceny.Fills
 import           Web.Larceny.Internal
@@ -160,23 +163,33 @@ renderRelative l sub s givenPath targetPath =
 
 
 -- | Load all the templates in some directory into a Library.
-loadTemplates :: Monad m => FilePath -> Settings m -> IO (Library s m)
+
+loadTemplates :: MonadIO m => FilePath -> Settings m -> m (Library s m)
 loadTemplates path settings =
   let
     mkPath p =
       T.splitOn "/" $ T.pack $ dropExtension p
   in do
-  tpls <- getAllTemplates path
+  tpls <- liftIO $ getAllTemplates path
 
-  M.fromList <$>
-    mapM
-      ( \file -> do
-          content <- ST.readFile (path <> "/" <> file)
-          return
-            ( mkPath file
-            , parseWithSettings settings (LT.fromStrict content)
-            )
-      ) tpls
+  lib <-
+    M.fromList <$>
+      mapM
+        ( \file -> do
+            content <- liftIO $ ST.readFile (path <> "/" <> file)
+            return
+              ( mkPath file
+              , parseXml settings (LT.fromStrict content)
+              )
+        ) tpls
+
+  case setPreprocessor settings of
+    Nothing ->
+      return $ fmap (parseTemplate settings) lib
+
+    Just preproces -> do
+      lib' <- preproces lib
+      return $ fmap (parseTemplate settings) lib'
 
 
 getAllTemplates :: FilePath -> IO [FilePath]
