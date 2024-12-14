@@ -187,8 +187,8 @@ loadTemplates path settings =
     Nothing ->
       return $ fmap (parseTemplate settings) lib
 
-    Just preproces -> do
-      lib' <- preproces lib
+    Just preprocess -> do
+      lib' <- preprocess lib
       return $ fmap (parseTemplate settings) lib'
 
 

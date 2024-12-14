@@ -239,7 +239,7 @@ defaultSettings =
     , setTrimWhitespace = True
     , setDebugLogger    = \_ -> return ()
     , setDebugComments  = False
-    , setPreprocessor   = undefined
+    , setPreprocessor   = Nothing
     }
 
 
