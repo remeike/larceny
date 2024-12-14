@@ -30,6 +30,7 @@ import qualified Data.Map            as M
 import           Data.Text            ( Text )
 import qualified Data.Text           as T
 import           Text.Read            ( readMaybe )
+import qualified Text.XML            as X
 --------------------------------------------------------------------------------
 
 
@@ -224,6 +225,7 @@ data Settings m =
     , setTrimWhitespace :: Bool
     , setDebugLogger    :: Text -> m ()
     , setDebugComments  :: Bool
+    , setPreprocessor   :: Maybe (Map [Text] [X.Node] -> m (Map [Text] [X.Node]))
     }
 
 
@@ -237,6 +239,7 @@ defaultSettings =
     , setTrimWhitespace = True
     , setDebugLogger    = \_ -> return ()
     , setDebugComments  = False
+    , setPreprocessor   = Nothing
     }
 
 

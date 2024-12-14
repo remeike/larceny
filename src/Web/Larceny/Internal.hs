@@ -6,6 +6,8 @@ module Web.Larceny.Internal
   ( findTemplate
   , parse
   , parseWithSettings
+  , parseXml
+  , parseTemplate
   ) where
 
 --------------------------------------------------------------------------------
@@ -42,6 +44,12 @@ parse = parseWithSettings defaultSettings
 -- | Use settings when parsing a template.
 parseWithSettings :: Monad m => Settings m -> LT.Text -> Template s m
 parseWithSettings settings t =
+  parseTemplate settings (parseXml settings t)
+
+
+-- | Parse lazy text into XML nodes with settings.
+parseXml :: Monad m => Settings m -> LT.Text -> [X.Node]
+parseXml settings t =
   let
     textWithoutDoctype =
       LT.replace "<!DOCTYPE html>" "<doctype />"
@@ -50,10 +58,15 @@ parseWithSettings settings t =
     (X.Document _ (X.Element _ _ nodes) _) =
       D.parseLT ("<div>" <> textWithoutDoctype <> "</div>")
 
-    lnodes =
-      map (toLarcenyNode settings) nodes
   in
-  mk settings $! lnodes
+  expandElements nodes
+
+
+-- | Parse XML nodes into template.
+parseTemplate :: Monad m => Settings m -> [X.Node] -> Template s m
+parseTemplate settings nodes =
+  mk settings $! map (toLarcenyNode settings) nodes
+
 
 
 -- | Phases of the template parsing/rendering process: 1. Parse the document
@@ -642,3 +655,41 @@ arrayFill =
     (op, ctxt') <- lift $ runStateT (runTemplate tpl pth jsonSplices lib) ctxt
     put ctxt'
     return $ ElemOutput "j:array" attrs [op]
+
+
+expandElements :: [X.Node] -> [X.Node]
+expandElements =
+  fmap
+    ( \node ->
+        case node of
+          X.NodeElement (X.Element (X.Name name n p) attrs nodes) ->
+            let
+              tags =
+                case T.splitOn ":" name of
+                  pfx : l : ls | T.length pfx == 1 || pfx == "svg" ->
+                    (pfx <> ":" <> l) : ls
+
+                  ls ->
+                    ls
+            in
+            case tags of
+              name' : rest ->
+                X.NodeElement $ X.Element (X.Name name' n p) attrs $
+                  List.foldr
+                    ( \tag children ->
+                        [ X.NodeElement
+                            $ X.Element (X.Name tag Nothing Nothing) mempty
+                            $ children
+                        ]
+                    )
+                    ( expandElements nodes )
+                    rest
+
+              _ ->
+                X.NodeElement
+                  $ X.Element (X.Name name n p) attrs
+                  $ expandElements nodes
+
+          _ ->
+            node
+    )

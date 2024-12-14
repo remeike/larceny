@@ -202,6 +202,26 @@ main = spec
 spec :: IO ()
 spec = hspec $ do
   withLarceny $ do
+    describe "shorthand" $ do
+      it "should use templating shorthand to render inner nodes" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ("skater", textFill "Beyonslay")
+            , ("parent", fillChildrenWith $ subs [("child", textFill "toy")])
+            , ("grand-parent",
+                fillChildrenWith $ subs
+                  [ ("parent"
+                    , fillChildrenWith $ subs [("child", textFill "onesie")]
+                    )
+                  ]
+              )
+            ]
+
+        "<p><parent:child/></p>" `shouldRenderM` "<p>toy</p>"
+        "<p><grand-parent:parent:child/></p>" `shouldRenderM` "<p>onesie</p>"
+        "<p><grand-parent:parent>My: <child/></grand-parent:parent></p>"
+          `shouldRenderM` "<p>My: onesie</p>"
+
     describe "fragments" $ do
       it "should bubble fragment to top" $ do
         hLarcenyState.lSubs .=
