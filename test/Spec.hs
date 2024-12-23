@@ -211,15 +211,20 @@ spec = hspec $ do
             , ("grand-parent",
                 fillChildrenWith $ subs
                   [ ("parent"
-                    , fillChildrenWith $ subs [("child", textFill "onesie")]
+                    , fillChildrenWith $
+                        subs
+                          [ ("child", textFill "onesie")
+                          , ("cousin", useAttrs (a "name") $ \name -> textFill name)
+                          ]
                     )
                   ]
               )
             ]
 
-        "<p><parent:child/></p>" `shouldRenderM` "<p>toy</p>"
-        "<p><grand-parent:parent:child/></p>" `shouldRenderM` "<p>onesie</p>"
-        "<p><grand-parent:parent>My: <child/></grand-parent:parent></p>"
+        "<p><parent.child/></p>" `shouldRenderM` "<p>toy</p>"
+        "<p><grand-parent.parent.child/></p>" `shouldRenderM` "<p>onesie</p>"
+        "<p><grand-parent.parent.cousin name=\"Slay\"/></p>" `shouldRenderM` "<p>Slay</p>"
+        "<p><grand-parent.parent>My: <child/></grand-parent.parent></p>"
           `shouldRenderM` "<p>My: onesie</p>"
 
     describe "fragments" $ do
@@ -719,9 +724,9 @@ spec = hspec $ do
                   ]
               )
             ]
-        "<p id=\"${parent->child}\"><skater /></p>"
+        "<p id=\"${parent.child}\"><skater /></p>"
           `shouldRenderM` "<p id=\"toy\">Beyonslay</p>"
-        "<p id=\"${grand-parent->parent->child}\"><skater /></p>"
+        "<p id=\"${grand-parent.parent.child}\"><skater /></p>"
           `shouldRenderM` "<p id=\"onesie\">Beyonslay</p>"
 
       it "should apply substitutions to attributes inside of blanks" $ do
