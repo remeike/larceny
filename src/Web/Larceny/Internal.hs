@@ -407,7 +407,7 @@ fillAttr settings eBlankText = do
   ProcessContext pth m l _ mko _ _ <- get
 
   case eBlankText of
-    Right hole@(Blank txt) | T.isInfixOf "?" txt || T.isInfixOf "->" txt -> do
+    Right hole@(Blank txt) | T.isInfixOf "?" txt || T.isInfixOf "." txt -> do
       (ls, _) <- process settings $ attrPath hole
       return $ T.concat $ fmap toText ls
 
@@ -571,7 +571,7 @@ attrPath (Blank txt) =
         _ ->
           []
   in
-  foldr attrNode [] $ T.splitOn "->" txt
+  foldr attrNode [] $ T.splitOn "." txt
 
 
 trimWhitespace :: LT.Text -> LT.Text
@@ -663,22 +663,13 @@ expandElements =
     ( \node ->
         case node of
           X.NodeElement (X.Element (X.Name name n p) attrs nodes) ->
-            let
-              tags =
-                case T.splitOn ":" name of
-                  pfx : l : ls | T.length pfx == 1 || pfx == "svg" ->
-                    (pfx <> ":" <> l) : ls
-
-                  ls ->
-                    ls
-            in
-            case tags of
-              name' : rest ->
-                X.NodeElement $ X.Element (X.Name name' n p) attrs $
+            case T.splitOn "." name of
+              name' : rest@(_ : _) ->
+                X.NodeElement $ X.Element (X.Name name' n p) mempty $
                   List.foldr
                     ( \tag children ->
                         [ X.NodeElement
-                            $ X.Element (X.Name tag Nothing Nothing) mempty
+                            $ X.Element (X.Name tag Nothing Nothing) attrs
                             $ children
                         ]
                     )
