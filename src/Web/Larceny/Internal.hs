@@ -241,13 +241,18 @@ fallbackFill settings blank splices =
                 <> show pth
 
           fallback =
-            fromMaybe
-              ( if setDebugComments settings then
-                  commentFill message
-                else
-                  voidFill
-              )
-              $ M.lookup FallbackBlank splices
+            case M.lookup "def" attr of
+              Just txt ->
+                rawTextFill txt
+
+              Nothing ->
+                fromMaybe
+                  ( if setDebugComments settings then
+                      commentFill message
+                    else
+                      voidFill
+                  )
+                  ( M.lookup FallbackBlank splices )
         in do
         lift $ setDebugLogger settings $ message
         unFill fallback attr (pth, tpl) lib

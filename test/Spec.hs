@@ -998,6 +998,11 @@ fallbackTests = do
     it "should custom fallbacks" $ do
       hLarcenyState.lSubs .= fallbackSub (rawTextFill "I'm a fallback.")
       "<p>missing: <missing /></p>" `shouldRenderM` "<p>missing: I'm a fallback.</p>"
+    it "should use fallback set on tag" $ do
+      "<p>missing: <missing def=\"I'm a fallback\"/></p>"
+        `shouldRenderM` "<p>missing: I'm a fallback</p>"
+      "<p>missing: <a href=\"${missing?def=/fallback}\">link</a></p>"
+        `shouldRenderM` "<p>missing: <a href=\"/fallback\">link</a></p>"
     it "should allow errors to be thrown, e.g., in dev mode" $ do
         hLarcenyState.lSubs .= fallbackSub (Fill $ \_ _ _ -> throw $ SomeError "missing blank!")
         "<p>missing: <missing /></p>" `shouldErrorM` (== (SomeError "missing blank!"))
