@@ -241,13 +241,18 @@ fallbackFill settings blank splices =
                 <> show pth
 
           fallback =
-            fromMaybe
-              ( if setDebugComments settings then
-                  commentFill message
-                else
-                  voidFill
-              )
-              $ M.lookup FallbackBlank splices
+            case M.lookup "def" attr of
+              Just txt ->
+                rawTextFill txt
+
+              Nothing ->
+                fromMaybe
+                  ( if setDebugComments settings then
+                      commentFill message
+                    else
+                      voidFill
+                  )
+                  ( M.lookup FallbackBlank splices )
         in do
         lift $ setDebugLogger settings $ message
         unFill fallback attr (pth, tpl) lib
@@ -581,13 +586,17 @@ trimWhitespace txt =
       ( \(prev, acc) t ->
         case LT.strip t of
             -- Start of <pre> tags
-            t' | LT.isPrefixOf "<pre" t' ->
+            t' | LT.isPrefixOf "<pre>" t' ->
+              (t', acc <> LT.stripStart t)
+            t' | LT.isPrefixOf "<pre " t' ->
               (t', acc <> LT.stripStart t)
             -- End of <pre> tags
             t' | LT.isPrefixOf "</pre>" t ->
               (t', acc <> "\n" <> LT.stripEnd t)
             -- Inside <pre> tags
-            _ | LT.isPrefixOf "<pre" prev ->
+            _ | LT.isPrefixOf "<pre>" prev ->
+              (prev, acc <> "\n" <> t)
+            _ | LT.isPrefixOf "<pre " prev ->
               (prev, acc <> "\n" <> t)
 
             --
