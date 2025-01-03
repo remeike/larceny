@@ -586,13 +586,17 @@ trimWhitespace txt =
       ( \(prev, acc) t ->
         case LT.strip t of
             -- Start of <pre> tags
-            t' | LT.isPrefixOf "<pre" t' ->
+            t' | LT.isPrefixOf "<pre>" t' ->
+              (t', acc <> LT.stripStart t)
+            t' | LT.isPrefixOf "<pre " t' ->
               (t', acc <> LT.stripStart t)
             -- End of <pre> tags
             t' | LT.isPrefixOf "</pre>" t ->
               (t', acc <> "\n" <> LT.stripEnd t)
             -- Inside <pre> tags
-            _ | LT.isPrefixOf "<pre" prev ->
+            _ | LT.isPrefixOf "<pre>" prev ->
+              (prev, acc <> "\n" <> t)
+            _ | LT.isPrefixOf "<pre " prev ->
               (prev, acc <> "\n" <> t)
 
             --
