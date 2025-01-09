@@ -417,6 +417,40 @@ fillAttr settings eBlankText = do
   ProcessContext pth m l _ mko _ _ <- get
 
   case eBlankText of
+    Right (Blank txt) | T.isInfixOf "|" txt && T.isInfixOf "??" txt ->
+      case T.splitOn "|" txt of
+        conditional : [result] -> do
+          case T.splitOn "??" result of
+            true : false : _ -> do
+              cond <- handleToken settings conditional
+              if isTrue cond then
+                handleToken settings true
+              else
+                handleToken settings false
+
+            _ ->
+              return ""
+
+        _ ->
+          return ""
+
+    Right (Blank txt) | T.isInfixOf "|" txt && T.isInfixOf "!!" txt ->
+      case T.splitOn "|" txt of
+        conditional : [result] -> do
+          case T.splitOn "!!" result of
+            true : false : _ -> do
+              cond <- handleToken settings conditional
+              if T.null cond then
+                handleToken settings false
+              else
+                handleToken settings true
+
+            _ ->
+              return ""
+
+        _ ->
+          return ""
+
     Right hole@(Blank txt) | T.isInfixOf "?" txt || T.isInfixOf "." txt -> do
       (ls, _) <- process settings $ attrPath hole
       return $ T.concat $ fmap toText ls
@@ -431,6 +465,25 @@ fillAttr settings eBlankText = do
         $ toProcessState
         $ return
         $ TextOutput text
+
+
+isTrue :: Text -> Bool
+isTrue "True" = True
+isTrue "true" = True
+isTrue _      = False
+
+
+handleToken :: Monad m => Settings m -> Text -> StateT (ProcessContext s m) m Text
+handleToken settings txt =
+  case T.uncons $ T.strip txt of
+    Just ('\'', str) ->
+      return $ T.dropWhileEnd (=='\'') str
+
+    Just ('\"', str) ->
+      return $ T.dropWhileEnd (=='\"') str
+
+    _ -> do
+      fillAttr settings (Right $ Blank $ T.strip txt)
 
 
 -- Look up the Fill for the hole.  Apply the Fill to a map of
@@ -569,17 +622,32 @@ findTemplate lib pth' targetPath =
 
 
 eUnboundAttrs :: (Text, Text) -> ([Either Text Blank], [Either Text Blank])
-eUnboundAttrs (name, value) = do
-  let possibleWords = T.splitOn "${"
-  let mWord w =
-        case T.splitOn "}" w of
-          [_] -> [Left w]
-          ["",_] -> [Left ("${" <> w)]
-          (word: rest) | T.any (=='{') word -> Left (word <> "}") : map Left rest
-          (word: rest) -> Right (Blank word) : map Left rest
-          _ -> [Left w]
+eUnboundAttrs (name, value) =
+  let
+    possibleWords =
+      T.splitOn "${"
+
+    mWord w =
+      case T.splitOn "}" w of
+        [_] ->
+          [Left w]
+
+        ["",_] ->
+          [Left ("${" <> w)]
+
+        (word: rest) | T.any (=='{') word ->
+          Left (word <> "}") : map Left rest
+
+        (word: rest) ->
+          Right (Blank word) : map Left rest
+
+        _ ->
+          [Left w]
+
+  in
   ( concatMap mWord (possibleWords name)
-    , concatMap mWord (possibleWords value))
+  , concatMap mWord (possibleWords value)
+  )
 
 
 attrPath :: Blank -> [Node]
