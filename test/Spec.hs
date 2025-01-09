@@ -858,6 +858,15 @@ spec = hspec $ do
         "<input value=\"${no|hello??goodbye}\"/>"
           `shouldRenderM` "<input value=\"World\"/>"
 
+        "<input value=\"${yes|hello??}\"/>"
+          `shouldRenderM` "<input value=\"Dolly\"/>"
+        "<input value=\"${no|hello??}\"/>"
+          `shouldRenderM` "<input value/>"
+        "<input value=\"${yes|??goodbye}\"/>"
+          `shouldRenderM` "<input value/>"
+        "<input value=\"${no|??goodbye}\"/>"
+          `shouldRenderM` "<input value=\"World\"/>"
+
         "<input value=\"${yes|'Hell yeah'??'Oh nooo!'}\"/>"
           `shouldRenderM` "<input value=\"Hell yeah\"/>"
         "<input value=\"${no|'Hell yeah'??'Oh nooo!'}\"/>"
@@ -880,6 +889,15 @@ spec = hspec $ do
         "<input value=\"${something|hello!!goodbye}\"/>"
           `shouldRenderM` "<input value=\"Dolly\"/>"
         "<input value=\"${nothing|hello!!goodbye}\"/>"
+          `shouldRenderM` "<input value=\"World\"/>"
+
+        "<input value=\"${something|hello!!}\"/>"
+          `shouldRenderM` "<input value=\"Dolly\"/>"
+        "<input value=\"${nothing|hello!!}\"/>"
+          `shouldRenderM` "<input value/>"
+        "<input value=\"${something|!!goodbye}\"/>"
+          `shouldRenderM` "<input value/>"
+        "<input value=\"${nothing|!!goodbye}\"/>"
           `shouldRenderM` "<input value=\"World\"/>"
 
         "<input value=\"${something|'Hell yeah'!!'Oh nooo!'}\"/>"
