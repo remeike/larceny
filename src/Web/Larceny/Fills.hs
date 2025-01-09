@@ -7,6 +7,7 @@ module Web.Larceny.Fills
   , rawTextFill'
   , outputFill
   , outputFill'
+  , shortFill
   , leafFill
   , voidFill
   , commentFill
@@ -103,6 +104,11 @@ rawTextFill t = rawTextFill' (return t)
 -- | TODO
 outputFill :: Monad m => Output -> Fill s m
 outputFill t = outputFill' (return t)
+
+-- |
+shortFill :: Monad m => Fill s m -> Fill s m
+shortFill (Fill f) =
+  Fill $ \m t l -> fmap ShortOutput $ f m t l
 
 -- | Use state or IO, then fill in some text.
 --

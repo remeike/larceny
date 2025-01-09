@@ -336,13 +336,18 @@ process settings nodes =
       if bubble then
         return (processedNode, bubble)
 
-      else do
-        (restOfNodes, bubble') <- process settings nextNodes
+      else
+        case processedNode of
+          [ShortOutput output] ->
+            return ([output], False)
 
-        if bubble' then
-          return (restOfNodes, True)
-        else
-          return (processedNode <> restOfNodes, False)
+          _ -> do
+            (restOfNodes, bubble') <- process settings nextNodes
+
+            if bubble' then
+              return (restOfNodes, True)
+            else
+              return (processedNode <> restOfNodes, False)
 
 
 -- Add the open tag and attributes, process the children, then close
@@ -471,20 +476,47 @@ processBlankFragment settings tagName atr kids = do
 
 
 processBind ::
-  Monad m => Settings m ->  Attributes -> [Node] -> ProcessT s m
-processBind settings atr kids = do
+  Monad m => Settings m -> Attributes -> [Node] -> ProcessT s m
+processBind settings atrs kids = do
+  atr <- fillAttrs settings atrs
+
   (ProcessContext pth m l _ mko nodes _) <- get
 
   let
     tagName =
       atr M.! "tag"
 
+    defArgs =
+      M.mapKeys (\k -> Blank $ "arg:" <> k)
+        $ M.map rawTextFill
+        $ M.filterWithKey (\k _ -> k /= "tag") atr
+
     newSubs =
-      subs
-        [ ( tagName
-          , Fill $ \_a _t _l -> runTemplate (mko kids) pth m l
-          )
-        ]
+      case M.lookup "assign" atr of
+        Just k ->
+          case M.lookup (Blank k) m of
+            Nothing ->
+              mempty
+
+            Just fill ->
+              subs
+                [ ( tagName
+                  , fill
+                  )
+                ]
+
+        Nothing ->
+          subs
+            [ ( tagName
+              , Fill $ \atr' _t _l ->
+                  let
+                    args =
+                      M.mapKeys (\k -> Blank $ "arg:" <> k)
+                        $ M.map rawTextFill atr'
+                  in
+                  runTemplate (mko kids) pth (args <> defArgs <> m) l
+              )
+            ]
 
   pcSubs .= newSubs `M.union` m
   process settings nodes

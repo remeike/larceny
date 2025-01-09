@@ -69,6 +69,7 @@ module Web.Larceny
   , rawTextFill'
   , outputFill
   , outputFill'
+  , shortFill
   , mapSubs
   , mapSubs'
   , leafFill
