@@ -253,4 +253,5 @@ data Output
   | HtmlDocType
   | VoidOutput
   | FragmentOutput [Output]
+  | ShortOutput Output
   deriving (Eq, Show)

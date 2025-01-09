@@ -227,6 +227,51 @@ spec = hspec $ do
         "<p><grand-parent.parent>My: <child/></grand-parent.parent></p>"
           `shouldRenderM` "<p>My: onesie</p>"
 
+    describe "short circuiting rendering" $ do
+      it "should implement a sort of pattern matching fill" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ( "case"
+              , useAttrs (a "match") $
+                  \(match :: Text) ->
+                    fillChildrenWith $
+                      subs
+                        [ ( "when"
+                          , useAttrs (a "on") $
+                              \on ->
+                                if match == on then
+                                  shortFill fillChildren
+                                else
+                                  textFill ""
+                          )
+                        , ( "else"
+                          , fillChildren
+                          )
+                        ]
+              )
+            ]
+
+        "<case match='dog'>\
+          \<when on='dog'><p>Woof</p></when>\
+          \<when on='cat'><p>Meow</p></when>\
+          \<else><p>Hi there</p></else>\
+        \</case>!"
+          `shouldRenderM` "<p>Woof</p>!"
+
+        "<case match='cat'>\
+          \<when on='dog'><p>Woof</p></when>\
+          \<when on='cat'><p>Meow</p></when>\
+          \<else><p>Hi there</p></else>\
+        \</case>!"
+          `shouldRenderM` "<p>Meow</p>!"
+
+        "<case match='human'>\
+          \<when on='dog'><p>Woof</p></when>\
+          \<when on='cat'><p>Meow</p></when>\
+          \<else><p>Hi there</p></else>\
+        \</case>!"
+          `shouldRenderM` "<p>Hi there</p>!"
+
     describe "fragments" $ do
       it "should bubble fragment to top" $ do
         hLarcenyState.lSubs .=

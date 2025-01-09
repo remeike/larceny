@@ -79,6 +79,9 @@ toMarkup output =
     VoidOutput ->
       mempty
 
+    ShortOutput out ->
+      toMarkup out
+
 
 toXml :: Output -> [Node]
 toXml output =
@@ -120,6 +123,9 @@ toXml output =
 
     VoidOutput ->
       []
+
+    ShortOutput out ->
+      toXml out
 
 
 toJson :: Output -> Value
@@ -269,6 +275,7 @@ toText output =
     CommentOutput txt -> txt
     HtmlDocType       -> ""
     VoidOutput        -> ""
+    ShortOutput out   -> toText out
 
 
 readMaybe :: Read a => Text -> Maybe a

@@ -336,13 +336,18 @@ process settings nodes =
       if bubble then
         return (processedNode, bubble)
 
-      else do
-        (restOfNodes, bubble') <- process settings nextNodes
+      else
+        case processedNode of
+          [ShortOutput output] ->
+            return ([output], False)
 
-        if bubble' then
-          return (restOfNodes, True)
-        else
-          return (processedNode <> restOfNodes, False)
+          _ -> do
+            (restOfNodes, bubble') <- process settings nextNodes
+
+            if bubble' then
+              return (restOfNodes, True)
+            else
+              return (processedNode <> restOfNodes, False)
 
 
 -- Add the open tag and attributes, process the children, then close
