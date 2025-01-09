@@ -843,6 +843,73 @@ spec = hspec $ do
         "<p class=\"${template}\"></p>"
           `shouldRenderM` "<p class=\"default\"></p>"
 
+    describe "ternaries in attributes" $ do
+      it "should render based on whether value is true" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ("yes", textFill "True")
+            , ("no", textFill "False")
+            , ("hello", textFill "Dolly")
+            , ("goodbye", textFill "World")
+            ]
+
+        "<input value=\"${yes|hello??goodbye}\"/>"
+          `shouldRenderM` "<input value=\"Dolly\"/>"
+        "<input value=\"${no|hello??goodbye}\"/>"
+          `shouldRenderM` "<input value=\"World\"/>"
+
+        "<input value=\"${yes|hello??}\"/>"
+          `shouldRenderM` "<input value=\"Dolly\"/>"
+        "<input value=\"${no|hello??}\"/>"
+          `shouldRenderM` "<input value/>"
+        "<input value=\"${yes|??goodbye}\"/>"
+          `shouldRenderM` "<input value/>"
+        "<input value=\"${no|??goodbye}\"/>"
+          `shouldRenderM` "<input value=\"World\"/>"
+
+        "<input value=\"${yes|'Hell yeah'??'Oh nooo!'}\"/>"
+          `shouldRenderM` "<input value=\"Hell yeah\"/>"
+        "<input value=\"${no|'Hell yeah'??'Oh nooo!'}\"/>"
+          `shouldRenderM` "<input value=\"Oh nooo!\"/>"
+
+        "<input value=\"${'True' | 'Hell yeah' ?? 'Oh nooo!'}\"/>"
+          `shouldRenderM` "<input value=\"Hell yeah\"/>"
+        "<input value=\"${'False' | 'Hell yeah' ?? 'Oh nooo!'}\"/>"
+          `shouldRenderM` "<input value=\"Oh nooo!\"/>"
+
+      it "should render based on whether value exists" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ("nothing", textFill "")
+            , ("something", textFill "some stuff")
+            , ("hello", textFill "Dolly")
+            , ("goodbye", textFill "World")
+            ]
+
+        "<input value=\"${something|hello!!goodbye}\"/>"
+          `shouldRenderM` "<input value=\"Dolly\"/>"
+        "<input value=\"${nothing|hello!!goodbye}\"/>"
+          `shouldRenderM` "<input value=\"World\"/>"
+
+        "<input value=\"${something|hello!!}\"/>"
+          `shouldRenderM` "<input value=\"Dolly\"/>"
+        "<input value=\"${nothing|hello!!}\"/>"
+          `shouldRenderM` "<input value/>"
+        "<input value=\"${something|!!goodbye}\"/>"
+          `shouldRenderM` "<input value/>"
+        "<input value=\"${nothing|!!goodbye}\"/>"
+          `shouldRenderM` "<input value=\"World\"/>"
+
+        "<input value=\"${something|'Hell yeah'!!'Oh nooo!'}\"/>"
+          `shouldRenderM` "<input value=\"Hell yeah\"/>"
+        "<input value=\"${no|'Hell yeah'!!'Oh nooo!'}\"/>"
+          `shouldRenderM` "<input value=\"Oh nooo!\"/>"
+
+        "<input value=\"${'Yerrrr' | 'Hell yeah' !! 'Oh nooo!'}\"/>"
+          `shouldRenderM` "<input value=\"Hell yeah\"/>"
+        "<input value=\"${'' | 'Hell yeah' !! 'Oh nooo!'}\"/>"
+          `shouldRenderM` "<input value=\"Oh nooo!\"/>"
+
     describe "a large template" $ do
       it "should render large HTML files" $ do
         hLarcenyState.lSubs .= subst
