@@ -668,6 +668,34 @@ spec = hspec $ do
           "<p>Since the non-existent tag is never referenced \
           \or rendered, it won't blow up.</p>"
 
+      it "should pass arguments to bind tag" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ( "person1", fillChildrenWith $ subs [("name", textFill "Jane Doe")])
+            , ( "person2", fillChildrenWith $ subs [("name", textFill "John Doe")])
+            ]
+
+        "<bind tag='intro' name='Mario'><p>Hi there, <arg:name/></p></bind>\
+        \<person1><intro name='${name}'/></person1>\
+        \<person2><intro name='${name}'/></person2>\
+        \<intro name='Mario'/>\
+        \<intro name='<strong>Mario!</strong>'/>"
+          `shouldRenderM`
+          "<p>Hi there, Jane Doe</p>\
+          \<p>Hi there, John Doe</p>\
+          \<p>Hi there, Mario</p>\
+          \<p>Hi there, <strong>Mario!</strong></p>"
+
+      it "should turn bind tag into an alias for another fill" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ( "person1", fillChildrenWith $ subs [("name", textFill "Jane Doe")])
+            , ( "person2", fillChildrenWith $ subs [("name", textFill "John Doe")])
+            ]
+
+        "<bind tag='intro' assign='person1'/><intro><p>Hi <name/></p></intro>"
+          `shouldRenderM` "<p>Hi Jane Doe</p>"
+
     describe "mapSubs" $ do
       it "should map the subs over a list" $ do
         hLarcenyState.lSubs .= subst
