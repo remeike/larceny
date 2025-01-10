@@ -141,7 +141,7 @@ renderM :: Text -> LarcenyHspecM Text
 renderM templateText = do
   (LarcenyHspecState _ (LarcenyState p s l settings)) <- S.get
   let tpl = parseWithSettings settings (LT.fromStrict templateText)
-  fmap toHtml $ liftIO $ evalStateT (runTemplate tpl p s l) ()
+  fmap toHtml $ liftIO $ fmap fst $ evalStateT (runTemplate tpl p s l) ()
 
 renderJson :: Text -> LarcenyHspecM Text
 renderJson templateText = do
@@ -149,6 +149,7 @@ renderJson templateText = do
   let tpl = parseWithSettings settings (LT.fromStrict templateText)
   fmap (T.decodeUtf8 . LBytes.toStrict . Aeson.encode . toJson)
     $ liftIO
+    $ fmap fst
     $ evalStateT (runTemplate tpl p s l) ()
 
 
@@ -361,7 +362,7 @@ spec = hspec $ do
             \<p>Hello <who/> (<count/>)</p></main>"
 
           runTpl =
-            runTemplate (parse tpl) ["default"] tplSubs mempty :: StateT Int IO Output
+            fmap fst $ runTemplate (parse tpl) ["default"] tplSubs mempty :: StateT Int IO Output
 
         (output, n) <- liftIO $ runStateT runTpl 0
         let txt = toHtml output
@@ -560,7 +561,7 @@ spec = hspec $ do
               ]
 
           myTpl =
-            runTemplate (parse "<p>hello <who/> (<count/>)</p>") ["default"] mySubs mempty :: StateT Int IO Output
+            fmap fst $ runTemplate (parse "<p>hello <who/> (<count/>)</p>") ["default"] mySubs mempty :: StateT Int IO Output
 
         (output, n) <- liftIO $ runStateT myTpl 1
         let txt = toHtml output
@@ -704,6 +705,14 @@ spec = hspec $ do
          \  <foo />                 \
          \</apply>"
            `shouldErrorM` (== SomeError "not found!")
+
+      it "should use bind tags from applied template" $ do
+        let lib = M.fromList [(["blah"], parse "<bind tag='foo'>fill this in<arg:target/></bind><bar/>")]
+        hLarcenyState.lLib .= lib
+        "<bind tag='bar'>Please!</bind>\
+         \<apply template=\"blah\"/>  \
+         \ Please <foo target=', dude'/>. <bar/>"
+           `shouldRenderM` "Please! Please fill this in, dude. Please!"
 
       it "shouldn't matter if there's no `tag` attribute" $ do
         "<bind>This won't ever be rendered!!</bind>\
@@ -1170,7 +1179,7 @@ attrTests =
               useAttrs (a"length")
                        (\n -> Fill $ \_attrs (_pth, tpl) _l -> liftIO $ do
                            t' <- evalStateT (runTemplate tpl ["default"] mempty mempty) ()
-                           return $ TextOutput $ T.take n (toText t') <> "...")
+                           return $ TextOutput $ T.take n (toText $ fst t') <> "...")
         hLarcenyState.lSubs .= subs [ ("adverb", textFill "really")
                                     , ("desc", descTplFill)]
         "<l:desc length=\"10\">A <adverb /> long description</desc>"
@@ -1210,6 +1219,6 @@ attrTests =
           do let ending = fromMaybe "..."  e
              \_attrs (_pth, tpl) _l -> liftIO $ do
                renderedText <- evalStateT (runTemplate tpl ["default"] mempty mempty) ()
-               return $ TextOutput $ T.take n (toText renderedText) <> ending
+               return $ TextOutput $ T.take n (toText $ fst renderedText) <> ending
 
 {-# ANN module ("HLint: ignore Redundant do" :: String) #-}

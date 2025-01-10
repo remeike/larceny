@@ -70,7 +70,7 @@ modifyInnerText f = Fill $
   \_attrs (_pth, tpl) _l ->
     liftIO $ do
       t' <- evalStateT (runTemplate tpl ["default"] mempty mempty) ()
-      return $ TextOutput $ f $ toText t'
+      return $ TextOutput $ f $ toText $ fst t'
 
 tplLib :: Library () IO
 tplLib = M.fromList [(["skater"], parse "Beyonslay")]
