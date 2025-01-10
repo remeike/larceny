@@ -157,7 +157,7 @@ renderRelative ::
 renderRelative l sub s givenPath targetPath =
   case findTemplate l givenPath targetPath of
     (pth, Just (Template run)) ->
-      Just . toHtml <$> evalStateT (run pth sub l) s
+      Just . toHtml <$> evalStateT (run [] pth sub l) s
 
     (_, Nothing) ->
       return Nothing

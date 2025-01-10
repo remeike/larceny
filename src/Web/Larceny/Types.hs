@@ -19,6 +19,8 @@ module Web.Larceny.Types
   , Settings(..)
   , defaultSettings
   , Output(..)
+  , Node(..)
+  , Element(..)
   ) where
 
 --------------------------------------------------------------------------------
@@ -125,7 +127,8 @@ fallbackSub fill = M.fromList [(FallbackBlank, fill)]
 -- Use `loadTemplates` to load the templates from some directory
 -- into a template library. Use the `render` functions to render
 -- templates from a Library by path.
-newtype Template s m = Template { runTemplate :: Path
+newtype Template s m = Template { runTemplate :: [Node]
+                                              -> Path
                                               -> Substitutions s m
                                               -> Library s m
                                               -> StateT s m Output }
@@ -255,3 +258,26 @@ data Output
   | FragmentOutput [Output]
   | ShortOutput Output
   deriving (Eq, Show)
+
+
+
+-- | Phases of the template parsing/rendering process: 1. Parse the document
+-- into HTML (or really, XML) nodes 2. Turn those nodes into Larceny nodes,
+-- which encodes more information about the elements, including prefix and
+-- whether the node is a regular HTML node, a special Larceny element, or a
+-- Larceny blank. 3. Render each node into Text according to its node type.
+data Node
+  = NodeElement Element
+  | NodeContent Text
+  | NodeComment Text
+  deriving Show
+
+
+data Element
+  = PlainElement Name Attributes [Node]
+  | ApplyElement Attributes [Node]
+  | InsertElement Attributes [Node]
+  | BindElement Attributes [Node]
+  | BlankElement Name Attributes [Node]
+  | DoctypeElement
+  deriving Show

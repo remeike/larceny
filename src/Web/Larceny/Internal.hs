@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE BangPatterns #-}
 
 
 module Web.Larceny.Internal
@@ -68,28 +69,6 @@ parseTemplate settings nodes =
   mk settings $! map (toLarcenyNode settings) nodes
 
 
-
--- | Phases of the template parsing/rendering process: 1. Parse the document
--- into HTML (or really, XML) nodes 2. Turn those nodes into Larceny nodes,
--- which encodes more information about the elements, including prefix and
--- whether the node is a regular HTML node, a special Larceny element, or a
--- Larceny blank. 3. Render each node into Text according to its node type.
-data Node
-  = NodeElement Element
-  | NodeContent Text
-  | NodeComment Text
-  deriving Show
-
-
-data Element
-  = PlainElement Name Attributes [Node]
-  | ApplyElement Attributes [Node]
-  | BindElement Attributes [Node]
-  | BlankElement Name Attributes [Node]
-  | DoctypeElement
-  deriving Show
-
-
 toLarcenyName :: X.Name -> Name
 toLarcenyName (X.Name tn _ _) =
   case T.stripPrefix "l:" tn of
@@ -147,8 +126,14 @@ toLarcenyNode settings node =
         Name Nothing "apply" ->
           NodeElement (ApplyElement attrs larcenyNodes)
 
+        Name Nothing "insert" ->
+          NodeElement (InsertElement attrs larcenyNodes)
+
         Name Nothing "apply-content" ->
           NodeElement (BlankElement (Name Nothing "apply-content") attrs larcenyNodes)
+
+        Name Nothing "insert-content" ->
+          NodeElement (BlankElement (Name Nothing "insert-content") attrs larcenyNodes)
 
         Name Nothing "doctype" ->
           NodeElement DoctypeElement
@@ -180,16 +165,16 @@ mk settings =
   let
     f nodes =
       Template $
-        \pth m l ->
+        \insert pth m l ->
           let
             splices =
               subs [("h:fragment", fillChildren)] <> m <> jsonSplices
 
             pc =
-              ProcessContext pth splices l (setOverrides settings) f nodes
+              ProcessContext pth splices l (setOverrides settings) f nodes insert
           in do
           s <- get
-          (ls, _) <- toUserState (pc s) (process settings nodes)
+          (ls, _) <- toUserState (pc s) (process settings insert nodes)
 
           case ls of
             [node] -> return node
@@ -266,6 +251,7 @@ data ProcessContext s m =
     , _pcOverrides :: Overrides
     , _pcMk        :: [Node] -> Template s m
     , _pcNodes     :: [Node]
+    , _pcInsert    :: [Node]
     , _pcState     :: s
     }
 
@@ -284,6 +270,10 @@ pcNodes :: Lens' (ProcessContext s m) [Node]
 pcNodes = lens _pcNodes (\pc n -> pc { _pcNodes = n })
 
 
+pcInsert :: Lens' (ProcessContext s m) [Node]
+pcInsert = lens _pcInsert (\pc n -> pc { _pcInsert = n })
+
+
 pcState :: Lens' (ProcessContext s m) s
 pcState = lens _pcState (\pc s -> pc { _pcState = s })
 
@@ -294,11 +284,11 @@ type ProcessT s m =
 
 add :: Monad m => Substitutions s m -> Template s m -> Template s m
 add mouter tpl =
-  Template (\pth minner l -> runTemplate tpl pth (minner `M.union` mouter) l)
+  Template (\nodes pth minner l -> runTemplate tpl nodes pth (minner `M.union` mouter) l)
 
 
-process :: Monad m => Settings m -> [Node] -> ProcessT s m
-process settings nodes =
+process :: Monad m => Settings m -> [Node] -> [Node] -> ProcessT s m
+process settings stuff nodes =
   case nodes of
     [] ->
       return ([], False)
@@ -315,11 +305,17 @@ process settings nodes =
           NodeElement DoctypeElement  ->
             return ([HtmlDocType], False)
 
-          NodeElement (ApplyElement atr kids) ->
+          NodeElement (ApplyElement atr kids) -> do
             processApply settings atr kids
+
+          NodeElement (InsertElement atr kids) -> do
+            processInsert settings atr kids
 
           NodeElement (PlainElement tn atr kids) ->
             processPlain settings tn atr kids
+
+          NodeElement (BlankElement (Name _ "insert-content") _ _) -> do
+            processInsertContent settings stuff
 
           NodeElement (BlankElement (Name _ "h:fragment") atr kids) -> do
             processBlankFragment settings "h:fragment" atr kids
@@ -342,7 +338,7 @@ process settings nodes =
             return ([output], False)
 
           _ -> do
-            (restOfNodes, bubble') <- process settings nextNodes
+            (restOfNodes, bubble') <- process settings stuff nextNodes
 
             if bubble' then
               return (restOfNodes, True)
@@ -357,7 +353,7 @@ processPlain ::
 processPlain settings tagName atr kids = do
   pc <- get
   atrs <- processAttrs settings atr
-  (processed, bubble) <- process settings kids
+  (processed, bubble) <- process settings [] kids
 
   if bubble then
     return (processed, bubble)
@@ -414,7 +410,7 @@ fillAttr ::
   Monad m =>
   Settings m -> Either Text Blank -> StateT (ProcessContext s m) m Text
 fillAttr settings eBlankText = do
-  ProcessContext pth m l _ mko _ _ <- get
+  ProcessContext pth m l _ mko _ _ _ <- get
 
   case eBlankText of
     Right (Blank txt) | T.isInfixOf "|" txt && T.isInfixOf "??" txt ->
@@ -452,7 +448,7 @@ fillAttr settings eBlankText = do
           return ""
 
     Right hole@(Blank txt) | T.isInfixOf "?" txt || T.isInfixOf "." txt -> do
-      (ls, _) <- process settings $ attrPath hole
+      (ls, _) <- process settings [] $ attrPath hole
       return $ T.concat $ fmap toText ls
 
     Right hole ->
@@ -492,7 +488,7 @@ handleToken settings txt =
 processBlank ::
   Monad m => Settings m -> Text -> Attributes -> [Node] -> ProcessT s m
 processBlank settings tagName atr kids = do
-  (ProcessContext pth m l _ mko _ _) <- get
+  (ProcessContext pth m l _ mko _ _ _) <- get
   filled <- fillAttrs settings atr
   (output, bubble) <-
     toProcessState
@@ -505,7 +501,7 @@ processBlank settings tagName atr kids = do
 processBlankFragment ::
   Monad m => Settings m -> Text -> Attributes -> [Node] -> ProcessT s m
 processBlankFragment settings tagName atr kids = do
-  (ProcessContext pth m l _ mko _ _) <- get
+  (ProcessContext pth m l _ mko _ _ _) <- get
   filled <- fillAttrs settings atr
 
   (output, bubble) <-
@@ -533,7 +529,7 @@ processBind ::
 processBind settings atrs kids = do
   atr <- fillAttrs settings atrs
 
-  (ProcessContext pth m l _ mko nodes _) <- get
+  (ProcessContext pth m l _ mko nodes _ _) <- get
 
   let
     tagName =
@@ -567,12 +563,12 @@ processBind settings atrs kids = do
                       M.mapKeys (\k -> Blank $ "arg:" <> k)
                         $ M.map rawTextFill atr'
                   in
-                  runTemplate (mko kids) pth (args <> defArgs <> m) l
+                  runTemplate (mko kids) [] pth (args <> defArgs <> m) l
               )
             ]
 
   pcSubs .= newSubs `M.union` m
-  process settings nodes
+  process settings [] nodes
 
 
 -- Look up the template that's supposed to be applied in the library,
@@ -581,11 +577,10 @@ processBind settings atrs kids = do
 -- combined with outer substitution and the library.
 processApply :: Monad m => Settings m -> Attributes -> [Node] -> ProcessT s m
 processApply settings atr kids = do
-  (ProcessContext pth m l _ mko _ _) <- get
+  (ProcessContext pth m l _ mko _ _ _) <- get
   filledAttrs <- fillAttrs settings atr
   let (absolutePath, tplToApply) = findTemplateFromAttrs pth l filledAttrs
-  (contentTpl, bubble) <- toProcessState $ runTemplate (mko kids) pth m l
-
+  (contentTpl, bubble) <- toProcessState $ runTemplate (mko kids) [] pth m l
   if bubble then
     return ([contentTpl], bubble)
   else
@@ -595,8 +590,25 @@ processApply settings atr kids = do
     in do
     (output, bubble') <-
       toProcessState
-        $ runTemplate tplToApply absolutePath (contentSub `M.union` m) l
+        $ runTemplate tplToApply [] absolutePath (contentSub `M.union` m) l
     return ([output], bubble')
+
+
+processInsert :: Monad m => Settings m -> Attributes -> [Node] -> ProcessT s m
+processInsert settings atr kids = do
+  (ProcessContext pth m l _ _ _ _ _) <- get
+  filledAttrs <- fillAttrs settings atr
+  let (absolutePath, tplToApply) = findTemplateFromAttrs pth l filledAttrs
+  (o, bubble) <- toProcessState $ runTemplate tplToApply kids absolutePath m l
+  pcInsert .= kids
+  return ([o], bubble)
+
+
+processInsertContent :: Monad m => Settings m -> [Node] -> ProcessT s m
+processInsertContent _ _ = do
+  (ProcessContext pth m l _ mko _ insert _) <- get
+  (o, b) <- toProcessState $ runTemplate (mko insert) [] pth m l
+  return ([o], b)
 
 
 findTemplateFromAttrs ::
@@ -752,7 +764,7 @@ objectFill :: Monad m => Fill s m
 objectFill =
   Fill $ \attrs (pth, tpl) lib -> do
     ctxt <- get
-    (op, ctxt') <- lift $ runStateT (runTemplate tpl pth objectSplices lib) ctxt
+    (op, ctxt') <- lift $ runStateT (runTemplate tpl [] pth objectSplices lib) ctxt
     put ctxt'
     return $ ElemOutput "j:object" attrs [op]
 
@@ -761,7 +773,7 @@ arrayFill :: Monad m => Fill s m
 arrayFill =
   Fill $ \attrs (pth, tpl) lib -> do
     ctxt <- get
-    (op, ctxt') <- lift $ runStateT (runTemplate tpl pth jsonSplices lib) ctxt
+    (op, ctxt') <- lift $ runStateT (runTemplate tpl [] pth jsonSplices lib) ctxt
     put ctxt'
     return $ ElemOutput "j:array" attrs [op]
 
