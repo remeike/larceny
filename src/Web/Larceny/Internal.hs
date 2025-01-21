@@ -189,11 +189,11 @@ mk settings =
               ProcessContext pth splices l (setOverrides settings) f nodes
           in do
           s <- get
-          (ls, _) <- toUserState (pc s) (process settings nodes)
+          ((ls, _), sps) <- toUserState (pc s) (process settings nodes)
 
           case ls of
-            [node] -> return node
-            _      -> return $ ListOutput ls
+            [node] -> return (node, sps)
+            _      -> return (ListOutput ls, sps)
   in
   f
 
@@ -209,14 +209,25 @@ toProcessState f = do
     _                -> return (result, False)
 
 
+toProcessStateSubs :: Monad m => StateT s m (Output, Substitutions s m) -> StateT (ProcessContext s m) m (Output, Bool, Substitutions s m)
+toProcessStateSubs f = do
+  pc <- get
+  ((result, sps), s') <- lift $ runStateT f (_pcState pc)
+  pcState .= s'
+
+  case result of
+    FragmentOutput _ -> return (result, True, sps)
+    _                -> return (result, False, sps)
+
+
 toUserState ::
   Monad m =>
-  ProcessContext s m -> StateT (ProcessContext s m) m a -> StateT s m a
+  ProcessContext s m -> StateT (ProcessContext s m) m a -> StateT s m (a, Substitutions s m)
 toUserState pc f = do
   s <- get
   (result, pc') <- lift $ runStateT f (pc { _pcState = s })
   put (_pcState pc')
-  return result
+  return (result, _pcSubs pc')
 
 
 fillIn :: Monad m => Settings m -> Blank -> Substitutions s m -> Fill s m
@@ -269,6 +280,9 @@ data ProcessContext s m =
     , _pcState     :: s
     }
 
+type ProcessT s m =
+  StateT (ProcessContext s m) m ([Output], Bool)
+
 
 infix  4 .=
 (.=) :: MonadState s m => ASetter s s a b -> b -> m ()
@@ -286,10 +300,6 @@ pcNodes = lens _pcNodes (\pc n -> pc { _pcNodes = n })
 
 pcState :: Lens' (ProcessContext s m) s
 pcState = lens _pcState (\pc s -> pc { _pcState = s })
-
-
-type ProcessT s m =
-  StateT (ProcessContext s m) m ([Output], Bool)
 
 
 add :: Monad m => Substitutions s m -> Template s m -> Template s m
@@ -567,7 +577,7 @@ processBind settings atrs kids = do
                       M.mapKeys (\k -> Blank $ "arg:" <> k)
                         $ M.map rawTextFill atr'
                   in
-                  runTemplate (mko kids) pth (args <> defArgs <> m) l
+                  fmap fst $ runTemplate (mko kids) pth (args <> defArgs <> m) l
               )
             ]
 
@@ -584,7 +594,7 @@ processApply settings atr kids = do
   (ProcessContext pth m l _ mko _ _) <- get
   filledAttrs <- fillAttrs settings atr
   let (absolutePath, tplToApply) = findTemplateFromAttrs pth l filledAttrs
-  (contentTpl, bubble) <- toProcessState $ runTemplate (mko kids) pth m l
+  (contentTpl, bubble, _) <- toProcessStateSubs $ runTemplate (mko kids) pth m l
 
   if bubble then
     return ([contentTpl], bubble)
@@ -593,9 +603,10 @@ processApply settings atr kids = do
       contentSub =
         subs [("apply-content", outputFill contentTpl)]
     in do
-    (output, bubble') <-
-      toProcessState
+    (output, bubble', sps) <-
+      toProcessStateSubs
         $ runTemplate tplToApply absolutePath (contentSub `M.union` m) l
+    pcSubs .= sps
     return ([output], bubble')
 
 
@@ -754,7 +765,7 @@ objectFill =
     ctxt <- get
     (op, ctxt') <- lift $ runStateT (runTemplate tpl pth objectSplices lib) ctxt
     put ctxt'
-    return $ ElemOutput "j:object" attrs [op]
+    return $ ElemOutput "j:object" attrs [fst op]
 
 
 arrayFill :: Monad m => Fill s m
@@ -763,7 +774,7 @@ arrayFill =
     ctxt <- get
     (op, ctxt') <- lift $ runStateT (runTemplate tpl pth jsonSplices lib) ctxt
     put ctxt'
-    return $ ElemOutput "j:array" attrs [op]
+    return $ ElemOutput "j:array" attrs [fst op]
 
 
 expandElements :: [X.Node] -> [X.Node]

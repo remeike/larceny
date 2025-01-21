@@ -162,7 +162,7 @@ mapSubs :: Monad m
         -> [a]
         -> Fill s m
 mapSubs f xs = Fill $ \_attrs (pth, tpl) lib ->
-  ListOutput <$> mapM (\n -> runTemplate tpl pth (f n) lib) xs
+  ListOutput <$> mapM (\n -> fmap fst $ runTemplate tpl pth (f n) lib) xs
 
 -- | Create substitutions for each element in a list (using IO/state if
 -- needed) and fill the child nodes with those substitutions.
@@ -171,7 +171,7 @@ mapSubs' f xs = Fill $
   \_m (pth, tpl) lib ->
     ListOutput <$> mapM (\x -> do
                            s' <- f x
-                           runTemplate tpl pth s' lib) xs
+                           fmap fst $ runTemplate tpl pth s' lib) xs
 
 -- | Fill in the child nodes of the blank with substitutions already
 -- available.
@@ -220,7 +220,7 @@ fillChildrenWith' m = maybeFillChildrenWith' (Just <$> m)
 maybeFillChildrenWith :: Monad m => Maybe (Substitutions s m) -> Fill s m
 maybeFillChildrenWith Nothing = textFill ""
 maybeFillChildrenWith (Just s) = Fill $ \_s (pth, Template tpl) l ->
-  tpl pth s l
+  fmap fst $ tpl pth s l
 
 -- | Use state and IO and maybe fill in with some substitutions.
 --
@@ -239,7 +239,7 @@ maybeFillChildrenWith' sMSubs = Fill $ \_s (pth, Template tpl) l -> do
   mSubs <- sMSubs
   case mSubs of
     Nothing -> return $ TextOutput ""
-    Just s  -> tpl pth s l
+    Just s  -> fmap fst $ tpl pth s l
 
 -- | Use attributes from the the blank as arguments to the fill.
 --
