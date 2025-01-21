@@ -18,6 +18,7 @@ import           Control.Monad.State  ( MonadState, StateT, runStateT
                                       , get, modify, put
                                       )
 import qualified Data.Char           as Char
+import           Data.Foldable        ( foldlM )
 import qualified Data.HashSet        as HS
 import qualified Data.List           as List
 import qualified Data.Map            as M
@@ -457,6 +458,39 @@ fillAttr settings eBlankText = do
 
             _ ->
               return ""
+
+        _ ->
+          return ""
+
+    Right (Blank txt) | T.isInfixOf "|" txt && T.isInfixOf "->" txt ->
+      case T.splitOn "|" txt of
+        match : [next] -> do
+          matched <- handleToken settings match
+
+          fmap (fromMaybe "") $
+            foldlM
+              ( \returned branch -> do
+                case returned of
+                  Nothing ->
+                    case T.splitOn "->" branch of
+                      [check, v] -> do
+                        check' <- handleToken settings check
+                        if check' == matched then
+                          fmap Just $ handleToken settings v
+                        else
+                          return Nothing
+
+                      [v] ->
+                        fmap Just $ handleToken settings v
+
+                      _ ->
+                        return Nothing
+
+                  Just v ->
+                    return $ Just v
+              )
+              Nothing
+              ( T.splitOn ";" next )
 
         _ ->
           return ""
