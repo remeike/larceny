@@ -852,7 +852,7 @@ spec = hspec $ do
         "<p class=\"${template}\"></p>"
           `shouldRenderM` "<p class=\"default\"></p>"
 
-    describe "ternaries in attributes" $ do
+    describe "ternaries and case expressions in attributes" $ do
       it "should render based on whether value is true" $ do
         hLarcenyState.lSubs .=
           subs
@@ -918,6 +918,37 @@ spec = hspec $ do
           `shouldRenderM` "<input value=\"Hell yeah\"/>"
         "<input value=\"${'' | 'Hell yeah' !! 'Oh nooo!'}\"/>"
           `shouldRenderM` "<input value=\"Oh nooo!\"/>"
+
+      it "should render based on match" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ("cat", textFill "Meow!")
+            , ("dog", textFill "Woof!")
+            , ("duck", textFill "Quack!")
+            , ("tree", textFill "stillness")
+            ]
+
+        "<bind tag=\"animal\">cat</bind>\
+        \<input value=\"${animal|'cat'->cat;'dog'->dog;'duck'->duck;tree}\"/>"
+          `shouldRenderM` "<input value=\"Meow!\"/>"
+        "<bind tag=\"animal\">dog</bind>\
+        \<input value=\"${animal|'cat'->cat;'dog'->dog;'duck'->duck;tree}\"/>"
+          `shouldRenderM` "<input value=\"Woof!\"/>"
+        "<bind tag=\"animal\">duck</bind>\
+        \<input value=\"${animal|'cat'->cat;'dog'->dog;'duck'->duck;tree}\"/>"
+          `shouldRenderM` "<input value=\"Quack!\"/>"
+        "<bind tag=\"animal\">whatever</bind>\
+        \<input value=\"${animal|'cat'->cat;'dog'->dog;'duck'->duck;tree}\"/>"
+          `shouldRenderM` "<input value=\"stillness\"/>"
+
+        "<input value=\"${'cat'|'cat'->'purr';'dog'->'howl';'duck'->'quakery';'silence'}\"/>"
+          `shouldRenderM` "<input value=\"purr\"/>"
+        "<input value=\"${'dog'|'cat'->'purr';'dog'->'howl';'duck'->'quakery';'silence'}\"/>"
+          `shouldRenderM` "<input value=\"howl\"/>"
+        "<input value=\"${'duck'|'cat'->'purr';'dog'->'howl';'duck'->'quakery';'silence'}\"/>"
+          `shouldRenderM` "<input value=\"quakery\"/>"
+        "<input value=\"${'nada'|'cat'->'purr';'dog'->'howl';'duck'->'quakery';'silence'}\"/>"
+          `shouldRenderM` "<input value=\"silence\"/>"
 
     describe "a large template" $ do
       it "should render large HTML files" $ do
