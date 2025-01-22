@@ -7,6 +7,7 @@ module Web.Larceny.Fills
   , rawTextFill'
   , outputFill
   , outputFill'
+  , bubbleFill
   , shortFill
   , leafFill
   , voidFill
@@ -104,6 +105,12 @@ rawTextFill t = rawTextFill' (return t)
 -- | TODO
 outputFill :: Monad m => Output -> Fill s m
 outputFill t = outputFill' (return t)
+
+
+bubbleFill :: Monad m => Fill s m -> Fill s m
+bubbleFill (Fill f) =
+  Fill $ \m t l -> fmap (BubbleOutput . pure) $ f m t l
+
 
 -- |
 shortFill :: Monad m => Fill s m -> Fill s m
