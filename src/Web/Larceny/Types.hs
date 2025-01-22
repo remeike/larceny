@@ -253,6 +253,6 @@ data Output
   | CommentOutput Text
   | HtmlDocType
   | VoidOutput
-  | FragmentOutput [Output]
+  | BubbleOutput [Output]
   | ShortOutput Output
   deriving (Eq, Show)

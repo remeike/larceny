@@ -277,72 +277,86 @@ spec = hspec $ do
       it "should bubble fragment to top" $ do
         hLarcenyState.lSubs .=
           subs
-            [ ( "to1", textFill "Dolly" )
+            [ ( "bubble", bubbleFill fillChildren )
+            , ( "to1", textFill "Dolly" )
             , ( "to2", textFill "World" )
             , ( "to3", textFill "there" )
             , ( "person1", fillChildrenWith $ subs [("name", textFill "Jane Doe")])
             , ( "person2", fillChildrenWith $ subs [("name", textFill "John Doe")])
             ]
 
-        "<main><h:fragment condition='True'><p>Hello <span><to1/></span></p></h:fragment>\
+        "<main><bubble><p>Hello <span><to1/></span></p></bubble>\
         \<p>Hey <span><to2/></span></p>\
         \<p>Hi <span><to3/></span></p></main>"
           `shouldRenderM` "<p>Hello <span>Dolly</span></p>"
 
         "<main><p>Hello <span><to1/></span></p>\
-        \<h:fragment condition='True'><p>Hey <span><to2/></span></p></h:fragment>\
+        \<bubble><p>Hey <span><to2/></span></p></bubble>\
         \<p>Hi <span><to3/></span></p></main>"
           `shouldRenderM` "<p>Hey <span>World</span></p>"
 
         "<main><p>Hello <span><to1/></span></p>\
         \<p>Hey <span><to2/></span></p>\
-        \<h:fragment condition='True'><p>Hi <span><to3/></span></p></h:fragment></main>"
+        \<bubble><p>Hi <span><to3/></span></p></bubble></main>"
           `shouldRenderM` "<p>Hi <span>there</span></p>"
 
-        "<main><p>Hello <h:fragment condition='True'><span><to1/></span></h:fragment></p>\
+        "<main><p>Hello <bubble><span><to1/></span></bubble></p>\
         \<p>Hey <span><to2/></span></p>\
         \<p>Hi <span><to3/></span></p></main>"
           `shouldRenderM` "<span>Dolly</span>"
 
         "<main><p>Hello <span><to1/></span></p>\
-        \<p>Hey <h:fragment condition='True'><span><to2/></span></h:fragment></p>\
+        \<p>Hey <bubble><span><to2/></span></bubble></p>\
         \<p>Hi <span><to3/></span></p></main>"
           `shouldRenderM` "<span>World</span>"
 
         "<main><p>Hello <span><to1/></span></p>\
         \<p>Hey <span><to2/></span></p>\
-        \<p>Hi <h:fragment condition='True'><span><to3/></span></h:fragment></p></main>"
+        \<p>Hi <bubble><span><to3/></span></bubble></p></main>"
           `shouldRenderM` "<span>there</span>"
 
-        "<main><div><p>Ok... </p><person1><h:fragment condition='True'><p>Hi, <name/></p></h:fragment></person1></div>\
+        "<main><div><p>Ok... </p><person1><bubble><p>Hi, <name/></p></bubble></person1></div>\
         \<div><p>Ok... </p><person2><p>Hi, <name/></p></person2></div></main>"
           `shouldRenderM` "<p>Hi, Jane Doe</p>"
 
         "<main><div><p>Ok... </p><person1><p>Hi, <name/></p></person1></div>\
-        \<div><p>Ok... </p><person2><h:fragment condition='True'><p>Hi, <name/></p></h:fragment></person2></div></main>"
+        \<div><p>Ok... </p><person2><bubble><p>Hi, <name/></p></bubble></person2></div></main>"
           `shouldRenderM` "<p>Hi, John Doe</p>"
 
       it "should use match to set fragment" $ do
         let
-          tpl =
-            "<main><h:fragment key='dolly' match='${frag}'><p>Hello <span>Dolly</span></p></h:fragment>\
-            \<h:fragment key='world' match='${frag}'><p>Hey <span>World</span></p></h:fragment>\
-            \<h:fragment key='there' match='${frag}'><p>Hi <span>there</span></p></h:fragment></main>"
+          fragSubs =
+            subs
+              [ ( "fragment"
+                , useAttrs (a "key" % a "match") $
+                    \x y ->
+                      if x == (y :: Text) then
+                        bubbleFill fillChildren
+                      else
+                        fillChildren
+                )
+              ]
 
-        hLarcenyState.lSubs .= subs [("frag", textFill "dolly")]
+          tpl =
+            "<main><fragment key='dolly' match='${frag}'><p>Hello <span>Dolly</span></p></fragment>\
+            \<fragment key='world' match='${frag}'><p>Hey <span>World</span></p></fragment>\
+            \<fragment key='there' match='${frag}'><p>Hi <span>there</span></p></fragment></main>"
+
+        hLarcenyState.lSubs .= subs [("frag", textFill "dolly")] <> fragSubs
         tpl `shouldRenderM` "<p>Hello <span>Dolly</span></p>"
 
-        hLarcenyState.lSubs .= subs [("frag", textFill "world")]
+        hLarcenyState.lSubs .= subs [("frag", textFill "world")] <> fragSubs
         tpl `shouldRenderM` "<p>Hey <span>World</span></p>"
 
-        hLarcenyState.lSubs .= subs [("frag", textFill "there")]
+        hLarcenyState.lSubs .= subs [("frag", textFill "there")] <> fragSubs
         tpl `shouldRenderM` "<p>Hi <span>there</span></p>"
 
       it "should not run actions for nodes that are not rendered" $ do
         let
           tplSubs =
             subs
-              [ ( "who"
+              [ ( "bubble", bubbleFill fillChildren )
+              , ( "who"
                 , Fill $
                     \_ _ _ -> do
                       modify (+1)
@@ -358,7 +372,7 @@ spec = hspec $ do
 
           tpl =
             "<main><p>Hi <who/> (<count/>)</p>\
-            \<h:fragment condition='True'><p>Hey <who/> (<count/>)</p></h:fragment>\
+            \<bubble><p>Hey <who/> (<count/>)</p></bubble>\
             \<p>Hello <who/> (<count/>)</p></main>"
 
           runTpl =

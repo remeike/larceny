@@ -184,7 +184,7 @@ mk settings =
         \pth m l ->
           let
             splices =
-              subs [("h:fragment", fillChildren)] <> m <> jsonSplices
+              m <> jsonSplices
 
             pc =
               ProcessContext pth splices l (setOverrides settings) f nodes
@@ -206,8 +206,8 @@ toProcessState f = do
   pcState .= s'
 
   case result of
-    FragmentOutput _ -> return (result, True)
-    _                -> return (result, False)
+    BubbleOutput _ -> return (result, True)
+    _              -> return (result, False)
 
 
 toProcessStateSubs :: Monad m => StateT s m (Output, Substitutions s m) -> StateT (ProcessContext s m) m (Output, Bool, Substitutions s m)
@@ -217,8 +217,8 @@ toProcessStateSubs f = do
   pcState .= s'
 
   case result of
-    FragmentOutput _ -> return (result, True, sps)
-    _                -> return (result, False, sps)
+    BubbleOutput _ -> return (result, True, sps)
+    _              -> return (result, False, sps)
 
 
 toUserState ::
@@ -331,9 +331,6 @@ process settings nodes =
 
           NodeElement (PlainElement tn atr kids) ->
             processPlain settings tn atr kids
-
-          NodeElement (BlankElement (Name _ "h:fragment") atr kids) -> do
-            processBlankFragment settings "h:fragment" atr kids
 
           NodeElement (BlankElement (Name _ name) atr kids) ->
             processBlank settings name atr kids
@@ -542,34 +539,6 @@ processBlank settings tagName atr kids = do
     toProcessState
       $ unFill (fillIn settings (Blank tagName) m) filled (pth, add m (mko kids)) l
   return ([output], bubble)
-
-
--- Same as `processBlank` but checking the attributes to determine whether it
--- should be bubbled up.
-processBlankFragment ::
-  Monad m => Settings m -> Text -> Attributes -> [Node] -> ProcessT s m
-processBlankFragment settings tagName atr kids = do
-  (ProcessContext pth m l _ mko _ _) <- get
-  filled <- fillAttrs settings atr
-
-  (output, bubble) <-
-    toProcessState
-      $ unFill (fillIn settings (Blank tagName) m) filled (pth, add m (mko kids)) l
-
-  if bubble then
-    return ([output], bubble)
-  else
-    case M.lookup "condition" filled of
-      Just "True" ->
-        return ([FragmentOutput [output]], True)
-
-      _ ->
-        case (M.lookup "key" filled, M.lookup "match" filled) of
-          (Just k, Just v) | k == v ->
-            return ([FragmentOutput [output]], True)
-
-          _ ->
-            return ([output], False)
 
 
 processBind ::

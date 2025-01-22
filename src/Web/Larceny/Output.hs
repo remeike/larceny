@@ -70,7 +70,7 @@ toMarkup output =
     ListOutput ls ->
       foldMap toMarkup ls
 
-    FragmentOutput ls ->
+    BubbleOutput ls ->
       foldMap toMarkup ls
 
     HtmlDocType ->
@@ -115,7 +115,7 @@ toXml output =
     ListOutput ls ->
       foldMap toXml ls
 
-    FragmentOutput ls ->
+    BubbleOutput ls ->
       foldMap toXml ls
 
     HtmlDocType ->
@@ -166,7 +166,7 @@ toJsonValue output =
     ListOutput ls ->
       foldMap toJsonValue ls
 
-    FragmentOutput ls ->
+    BubbleOutput ls ->
       foldMap toJsonValue ls
 
     _ ->
@@ -217,7 +217,7 @@ toJsonPairs output =
     ListOutput ls ->
       foldMap toJsonPairs ls
 
-    FragmentOutput ls ->
+    BubbleOutput ls ->
       foldMap toJsonPairs ls
 
     _ ->
@@ -270,7 +270,7 @@ toText output =
     ElemOutput _ _ ls -> foldMap toText ls
     TextOutput txt    -> txt
     ListOutput ls     -> foldMap toText ls
-    FragmentOutput ls -> foldMap toText ls
+    BubbleOutput ls -> foldMap toText ls
     RawTextOutput txt -> txt
     CommentOutput txt -> txt
     HtmlDocType       -> ""
