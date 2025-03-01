@@ -660,6 +660,18 @@ spec = hspec $ do
         hLarcenyState.lSubs .= subs [("zone1", textFill "zone1-currentIssue")]
         "<apply template=\"${zone1}\" />" `shouldRenderM` "Current Issue"
 
+      it "should apply splices from outer template to apply-content" $ do
+        hLarcenyState.lSubs .=
+          subs
+            [ ( "recipient", fillChildrenWith $ subs [("name", textFill "Jane Doe")] )
+            , ( "message", textFill "How are you doing?" )
+            , ( "signer", textFill "John Doe")
+            ]
+        let lib = M.fromList [(["base"], parse "Dear <recipient><apply-content/></recipient> Yours truly,")]
+        hLarcenyState.lLib .= lib
+        "<apply template=\"base\"><name/>, <message/></apply> <signer/>"
+           `shouldRenderM` "Dear Jane Doe, How are you doing? Yours truly, John Doe"
+
     describe "overriding HTML tags" $ do
       it "should allow overriden Html tags" $ do
         hLarcenyState.lSubs .= subs [("div", textFill "notadivatall")]
@@ -763,6 +775,15 @@ spec = hspec $ do
 
         "<bind tag='intro' assign='person1'/><intro><p>Hi <name/></p></intro>"
           `shouldRenderM` "<p>Hi Jane Doe</p>"
+
+      it "should use outer bind tag within the apply-content tag" $ do
+        let lib = M.fromList [(["base"], parse "<bind tag='foo'>Bar</bind>Hey<apply-content/>")]
+        hLarcenyState.lLib .= lib
+        "<apply template=\"base\"> \
+         \  Yo                 \
+         \  <foo/>\
+         \</apply>"
+           `shouldRenderM` "Hey Yo Bar"
 
     describe "mapSubs" $ do
       it "should map the subs over a list" $ do
