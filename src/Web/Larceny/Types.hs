@@ -81,6 +81,10 @@ newtype Fill s m = Fill { unFill :: Attributes
                                -> Library s m
                                -> StateT s m Output }
 
+
+instance Show (Fill s m) where
+  show _ = "whatever"
+
 -- | The Blank's attributes, a map from the attribute name to
 -- it's value.
 type Attributes = Map Text Text

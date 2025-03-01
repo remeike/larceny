@@ -596,21 +596,27 @@ processApply :: Monad m => Settings m -> Attributes -> [Node] -> ProcessT s m
 processApply settings atr kids = do
   (ProcessContext pth m l _ mko _ _) <- get
   filledAttrs <- fillAttrs settings atr
-  let (absolutePath, tplToApply) = findTemplateFromAttrs pth l filledAttrs
-  (contentTpl, bubble, _) <- toProcessStateSubs $ runTemplate (mko kids) pth m l
 
-  if bubble then
-    return ([contentTpl], bubble)
-  else
-    let
-      contentSub =
-        subs [("apply-content", outputFill contentTpl)]
-    in do
-    (output, bubble', sps) <-
-      toProcessStateSubs
-        $ runTemplate tplToApply absolutePath (contentSub `M.union` m) l
-    pcSubs .= sps
-    return ([output], bubble')
+  let
+    (absolutePath, tplToApply) =
+      findTemplateFromAttrs pth l filledAttrs
+
+    contentSub =
+      subs
+        [ ( "apply-content"
+          , Fill $
+              \_ (pth', Template f) lib -> do
+                (_, splices) <- f pth' m lib
+                fmap fst $ runTemplate (mko kids) pth (splices <> m) l
+          )
+        ]
+
+  (output, bubble, splices) <-
+    toProcessStateSubs
+      $ runTemplate tplToApply absolutePath (contentSub `M.union` m) l
+
+  pcSubs .= splices
+  return ([output], bubble)
 
 
 findTemplateFromAttrs ::
