@@ -24,6 +24,7 @@ module Web.Larceny.Types
 --------------------------------------------------------------------------------
 import           Control.Exception
 import           Control.Monad.State  ( StateT )
+import           Data.Aeson           ( Value )
 import           Data.Hashable        ( Hashable, hash, hashWithSalt )
 import           Data.Map             ( Map )
 import qualified Data.Map            as M
@@ -251,6 +252,7 @@ data Output
   | TextOutput Text
   | ListOutput [Output]
   | RawTextOutput Text
+  | RawJsonOutput Value
   | CommentOutput Text
   | HtmlDocType
   | VoidOutput
