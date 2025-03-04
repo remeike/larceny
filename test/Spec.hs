@@ -584,6 +584,7 @@ spec = hspec $ do
         liftIO $ n `shouldBe` 2
         setResult H.Success
 
+    describe "delayed renders" $ do
       it "should render in specified order" $ do
         let
           splices =
@@ -640,6 +641,56 @@ spec = hspec $ do
         (output4, letters4) <- runTpl t4
         liftIO $ toHtml output4 `shouldBe` " The quick brown fox "
         liftIO $ letters4 `shouldBe` ["d","c","b","a"]
+        setResult H.Success
+
+      it "should render with wrapping substitutions" $ do
+        let
+          splices =
+            subs
+              [ ( "add"
+                , useAttrs (a "w") $
+                    \txt ->
+                      Fill $
+                        \_ _ _ -> do
+                          modify (<> [txt])
+                          return VoidOutput
+                )
+              , ( "delayed"
+                , delayedFill
+                )
+              , ( "subject1"
+                , fillChildrenWith $ subs [("color", textFill "purple"), ("animal", textFill "cat")]
+                )
+              , ( "subject2"
+                , fillChildrenWith $ subs [("color", textFill "black"), ("animal", textFill "sheep")]
+                )
+              ]
+
+          t1 =
+            "The <delayed n='3'><add w='a'/>quick </delayed>\
+            \<subject1><delayed n='1'><add w='b'/><color/> </delayed></subject1>\
+            \<subject2><delayed n='2'><add w='c'/><animal/> </delayed></subject2>\
+            \<add w='d'/>"
+
+          t2 =
+            "The <delayed n='3'><add w='a'/>quick </delayed>\
+            \<subject1><delayed n='1'><add w='b'/><color/> </delayed>\
+            \<delayed n='2'><add w='c'/><animal/> </delayed></subject1>\
+            \<add w='d'/>"
+
+          runTpl tpl =
+            liftIO $ runStateT (fmap fst $ runTemplate (parse tpl) ["default"] splices mempty :: StateT [Text] IO Output) []
+
+        (output1, letters1) <- runTpl t1
+        liftIO $ toHtml output1 `shouldBe` " The quick purple sheep "
+        liftIO $ letters1 `shouldBe` ["b","c","d","a"]
+
+        (output2, letters2) <- runTpl t2
+        liftIO $ print letters2
+        liftIO $ print $ toHtml output2
+        liftIO $ toHtml output2 `shouldBe` " The quick purple cat "
+        liftIO $ letters2 `shouldBe` ["b","c","d","a"]
+
         setResult H.Success
 
     describe "xml" $ do
