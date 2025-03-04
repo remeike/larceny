@@ -21,6 +21,7 @@ import qualified Data.Char           as Char
 import           Data.Foldable        ( foldlM )
 import qualified Data.HashSet        as HS
 import qualified Data.List           as List
+import           Data.Map             ( Map )
 import qualified Data.Map            as M
 import           Data.Maybe           ( fromMaybe )
 import           Data.Text            ( Text )
@@ -186,15 +187,25 @@ mk settings =
             splices =
               m <> jsonSplices
 
-            pc =
-              ProcessContext pth splices l (setOverrides settings) f nodes
+            pc s =
+              ProcessContext pth splices l (setOverrides settings) f nodes s mempty
           in do
           s <- get
-          ((ls, _), sps) <- toUserState (pc s) (process settings nodes)
+          ((ls, _), pc') <- toUserState (pc s) (process settings nodes)
 
-          case ls of
-            [node] -> return (node, sps)
-            _      -> return (ListOutput ls, sps)
+          let
+            output =
+              case ls of
+                [node] -> node
+                _      -> ListOutput ls
+
+          case M.lookupMin (_pcDelayed pc') of
+            Nothing ->
+              return (output, _pcSubs pc')
+
+            Just ((k, _), _) -> do
+              output' <- renderDelays pc' k output
+              return (output', _pcSubs pc')
   in
   f
 
@@ -223,12 +234,12 @@ toProcessStateSubs f = do
 
 toUserState ::
   Monad m =>
-  ProcessContext s m -> StateT (ProcessContext s m) m a -> StateT s m (a, Substitutions s m)
+  ProcessContext s m -> StateT (ProcessContext s m) m a -> StateT s m (a, ProcessContext s m)
 toUserState pc f = do
   s <- get
   (result, pc') <- lift $ runStateT f (pc { _pcState = s })
   put (_pcState pc')
-  return (result, _pcSubs pc')
+  return (result, pc')
 
 
 fillIn :: Monad m => Settings m -> Blank -> Substitutions s m -> Fill s m
@@ -279,6 +290,7 @@ data ProcessContext s m =
     , _pcMk        :: [Node] -> Template s m
     , _pcNodes     :: [Node]
     , _pcState     :: s
+    , _pcDelayed   :: Map (Int, Int) ([Node], Substitutions s m)
     }
 
 type ProcessT s m =
@@ -422,7 +434,7 @@ fillAttr ::
   Monad m =>
   Settings m -> Either Text Blank -> StateT (ProcessContext s m) m Text
 fillAttr settings eBlankText = do
-  ProcessContext pth m l _ mko _ _ <- get
+  ProcessContext pth m l _ mko _ _ _ <- get
 
   case eBlankText of
     Right (Blank txt) | T.isInfixOf "|" txt && T.isInfixOf "??" txt ->
@@ -533,12 +545,25 @@ handleToken settings txt =
 processBlank ::
   Monad m => Settings m -> Text -> Attributes -> [Node] -> ProcessT s m
 processBlank settings tagName atr kids = do
-  (ProcessContext pth m l _ mko _ _) <- get
+  ctxt@(ProcessContext pth m l _ mko _ _ delays) <- get
   filled <- fillAttrs settings atr
   (output, bubble) <-
     toProcessState
       $ unFill (fillIn settings (Blank tagName) m) filled (pth, add m (mko kids)) l
-  return ([output], bubble)
+
+  case output of
+    DelayedOutput pos _ -> do
+      case M.lookupMax (M.filterWithKey (\(k,_) _ -> k == pos) delays) of
+        Just ((_, n), _) -> do
+          put $ ctxt { _pcDelayed = M.insert (pos, n + 1) (kids, m) delays }
+          return ([DelayedOutput pos (Just $ n + 1)], False)
+
+        Nothing -> do
+          put $ ctxt { _pcDelayed = M.insert (pos, 1) (kids, m) delays }
+          return ([DelayedOutput pos (Just 1)], False)
+
+    _ ->
+      return ([output], bubble)
 
 
 processBind ::
@@ -546,7 +571,7 @@ processBind ::
 processBind settings atrs kids = do
   atr <- fillAttrs settings atrs
 
-  (ProcessContext pth m l _ mko nodes _) <- get
+  (ProcessContext pth m l _ mko nodes _ _) <- get
 
   let
     tagName =
@@ -594,7 +619,7 @@ processBind settings atrs kids = do
 -- combined with outer substitution and the library.
 processApply :: Monad m => Settings m -> Attributes -> [Node] -> ProcessT s m
 processApply settings atr kids = do
-  (ProcessContext pth m l _ mko _ _) <- get
+  (ProcessContext pth m l _ mko _ _ _) <- get
   filledAttrs <- fillAttrs settings atr
 
   let
@@ -813,3 +838,43 @@ expandElements =
           _ ->
             node
     )
+
+
+renderDelayed :: Monad m => ProcessContext s m -> Int -> Output -> StateT s m Output
+renderDelayed ctxt@(ProcessContext pth _ l _ mko _ _ delays) n output =
+  case output of
+    (DelayedOutput k1 (Just k2)) | n == k1 ->
+      case M.lookup (k1, k2) delays of
+        Nothing ->
+          return VoidOutput
+
+        Just (nodes, m) ->
+          unFill fillChildren mempty (pth, add m (mko nodes)) l
+
+    ListOutput ls ->
+      fmap ListOutput $ traverse (renderDelayed ctxt n) ls
+
+    ElemOutput name attrs ls ->
+      fmap (ElemOutput name attrs) $ traverse (renderDelayed ctxt n) ls
+
+    BubbleOutput ls ->
+      fmap BubbleOutput $ traverse (renderDelayed ctxt n) ls
+
+    ShortOutput out ->
+      fmap ShortOutput $ renderDelayed ctxt n out
+
+    _ ->
+      return output
+
+
+renderDelays :: Monad m => ProcessContext s m -> Int -> Output -> StateT s m Output
+renderDelays ctxt n output = do
+  output' <- renderDelayed ctxt n output
+  let delays = M.filterWithKey (\(k, _) _ -> k /= n) $ _pcDelayed ctxt
+
+  case M.lookupMin delays of
+    Nothing ->
+      return output'
+
+    Just ((k, _), _) ->
+      renderDelays (ctxt { _pcDelayed = delays }) k output'

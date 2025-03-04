@@ -64,6 +64,9 @@ toMarkup output =
     RawTextOutput txt ->
       Blaze.preEscapedText txt
 
+    RawJsonOutput _ ->
+      mempty
+
     CommentOutput txt ->
       Blaze.textComment txt
 
@@ -81,6 +84,9 @@ toMarkup output =
 
     ShortOutput out ->
       toMarkup out
+
+    DelayedOutput _ _ ->
+      mempty
 
 
 toXml :: Output -> [Node]
@@ -109,6 +115,9 @@ toXml output =
         $ Xml.documentRoot
         $ Html.parseLT ("<div>" <> LT.fromStrict txt <> "</div>")
 
+    RawJsonOutput _ ->
+      []
+
     CommentOutput txt ->
       [ NodeComment txt ]
 
@@ -126,6 +135,9 @@ toXml output =
 
     ShortOutput out ->
       toXml out
+
+    DelayedOutput _ _ ->
+      []
 
 
 toJson :: Output -> Value
@@ -168,6 +180,9 @@ toJsonValue output =
 
     BubbleOutput ls ->
       foldMap toJsonValue ls
+
+    RawJsonOutput val ->
+      [val]
 
     _ ->
       []
@@ -270,12 +285,14 @@ toText output =
     ElemOutput _ _ ls -> foldMap toText ls
     TextOutput txt    -> txt
     ListOutput ls     -> foldMap toText ls
-    BubbleOutput ls -> foldMap toText ls
+    BubbleOutput ls   -> foldMap toText ls
     RawTextOutput txt -> txt
+    RawJsonOutput _   -> ""
     CommentOutput txt -> txt
     HtmlDocType       -> ""
     VoidOutput        -> ""
     ShortOutput out   -> toText out
+    DelayedOutput _ _ -> ""
 
 
 readMaybe :: Read a => Text -> Maybe a

@@ -12,6 +12,7 @@ module Web.Larceny.Fills
   , leafFill
   , voidFill
   , commentFill
+  , delayedFill
   , mapSubs
   , mapSubs'
   , fillChildren
@@ -153,6 +154,11 @@ voidFill =
 commentFill :: Monad m => Text -> Fill s m
 commentFill comment =
   Fill $ \_ _ _ -> return $ CommentOutput comment
+
+-- | TODO
+delayedFill :: Monad m => Fill s m
+delayedFill =
+  useAttrs (a "n") $ \n -> Fill $ \_ _ _ -> return $ DelayedOutput n Nothing
 
 -- | Create substitutions for each element in a list and fill the child nodes
 -- with those substitutions.
