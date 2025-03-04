@@ -584,6 +584,64 @@ spec = hspec $ do
         liftIO $ n `shouldBe` 2
         setResult H.Success
 
+      it "should render in specified order" $ do
+        let
+          splices =
+            subs
+              [ ( "add"
+                , useAttrs (a "w") $
+                    \txt ->
+                      Fill $
+                        \_ _ _ -> do
+                          modify (<> [txt])
+                          return VoidOutput
+                )
+              , ( "delayed"
+                , delayedFill
+                )
+              ]
+
+          t1 =
+            "The <add w='a'/>quick <add w='b'/>brown <add w='c'/>fox <add w='d'/>"
+
+          t2 =
+            "The <delayed n='3'><add w='a'/>quick </delayed>\
+            \<delayed n='1'><add w='b'/>brown </delayed>\
+            \<delayed n='2'><add w='c'/>fox </delayed>\
+            \<add w='d'/>"
+
+          t3 =
+            "The <delayed n='1'><add w='a'/>quick </delayed>\
+            \<delayed n='1'><add w='b'/>brown </delayed>\
+            \<delayed n='3'><add w='c'/>fox </delayed>\
+            \<add w='d'/>"
+
+          t4 =
+            "The <delayed n='3'><add w='a'/>quick </delayed>\
+            \<delayed n='2'><add w='b'/>brown </delayed>\
+            \<delayed n='1'><add w='c'/>fox </delayed>\
+            \<add w='d'/>"
+
+          runTpl tpl =
+            liftIO $ runStateT (fmap fst $ runTemplate (parse tpl) ["default"] splices mempty :: StateT [Text] IO Output) []
+
+        (output1, letters1) <- runTpl t1
+        liftIO $ toHtml output1 `shouldBe` " The quick brown fox "
+        liftIO $ letters1 `shouldBe` ["a","b","c","d"]
+
+        (output2, letters2) <- runTpl t2
+        liftIO $ toHtml output2 `shouldBe` " The quick brown fox "
+        liftIO $ letters2 `shouldBe` ["d","b","c","a"]
+
+        (output3, letters3) <- runTpl t3
+        liftIO $ toHtml output3 `shouldBe` " The quick brown fox "
+        liftIO $ letters3 `shouldBe` ["d","a","b","c"]
+
+        (output4, letters4) <- runTpl t4
+        liftIO $ toHtml output4 `shouldBe` " The quick brown fox "
+        liftIO $ letters4 `shouldBe` ["d","c","b","a"]
+        setResult H.Success
+
     describe "xml" $ do
       it "should render xml" $ do
         "<x:hello><x:world>Hi</x:world></x:hello>" `shouldRenderM`

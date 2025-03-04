@@ -71,6 +71,7 @@ module Web.Larceny
   , outputFill'
   , bubbleFill
   , shortFill
+  , delayedFill
   , mapSubs
   , mapSubs'
   , leafFill

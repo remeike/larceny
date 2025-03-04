@@ -256,4 +256,5 @@ data Output
   | VoidOutput
   | BubbleOutput [Output]
   | ShortOutput Output
+  | DelayedOutput Int (Maybe Int)
   deriving (Eq, Show)
